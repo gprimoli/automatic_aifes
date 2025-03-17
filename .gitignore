@@ -11,7 +11,7 @@
 *.obj
 *.elf
 
-# Linker output
+# Linker targhet
 *.ilk
 *.map
 *.exp
