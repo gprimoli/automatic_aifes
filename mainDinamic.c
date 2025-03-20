@@ -5,6 +5,7 @@
 #include "aifes.h"
 #include "lib/GenericFuncs.h"
 
+
 void printLoss(float loss);
 
 int parse_layers(char *arg, uint32_t **LAYER_COMPOSITION, uint32_t *TOT_LAYER);
@@ -15,8 +16,9 @@ int runTraining(uint32_t *LAYER_COMPOSITION, AIFES_E_activations *ACTIVATION_FUN
                 uint32_t BATCH_SIZE, uint32_t EPOCH, uint32_t LOG_LOSS, float *weights, float *input, float *target,
                 float *output, char *weights_filename);
 
-int initArr(float **arr, uint32_t size, char *initFile);
+int initArrA(float **arr, uint32_t colSize, uint32_t rowSize, char *initFile);
 
+int initArrB(float **arr, uint32_t size, char *initFile);
 
 int main(int argc, char *argv[]) {
     srand(time(NULL));
@@ -34,22 +36,20 @@ int main(int argc, char *argv[]) {
     char *layerDefString = NULL, *activationFunctionString = NULL;
 
     int opt;
-    while ((opt = getopt(argc, argv, "b:e:l:a:x:w:i:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "b:e:l:a:w:i:t:")) != -1) {
         switch (opt) {
             case 'b':
                 BATCH_SIZE = atoi(optarg);
                 break;
             case 'e':
                 EPOCH = atoi(optarg);
+                LOG_LOSS = EPOCH / 5;
                 break;
             case 'l':
                 layerDefString = optarg;
                 break;
             case 'a':
                 activationFunctionString = optarg;
-                break;
-            case 'x':
-                LOG_LOSS = atoi(optarg);
                 break;
             case 'w':
                 weights_filename = optarg;
@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
                 fprintf(
                     stderr,
                     "Usage: %s -b <batch_size> -e <epoch> -l <layer_composition> -a <activation_function_composition> "
-                    "-x <log_loss> -i <input_file> -t <targhet_file> [-w <weights_file>]\n",
+                    "-i <input_file> -t <targhet_file> [-w <weights_file>]\n",
                     argv[0]);
                 return EXIT_FAILURE;
         }
@@ -72,11 +72,11 @@ int main(int argc, char *argv[]) {
 
     if ((parse_layers(layerDefString, &LAYER_COMPOSITION, &TOT_LAYER) != EXIT_SUCCESS) ||
         (parse_activation_func(activationFunctionString, &ACTIVATION_FUNCTION, TOT_LAYER) != EXIT_SUCCESS) ||
-        (initArr(&weights, AIFES_E_flat_weights_number_fnn_f32(LAYER_COMPOSITION, TOT_LAYER), weights_filename) !=
+        (initArrB(&weights, AIFES_E_flat_weights_number_fnn_f32(LAYER_COMPOSITION, TOT_LAYER), weights_filename) !=
          EXIT_SUCCESS) ||
-        (initArr(&input_data, BATCH_SIZE * LAYER_COMPOSITION[0], input_filename) != EXIT_SUCCESS) ||
-        (initArr(&targhet_data, BATCH_SIZE * LAYER_COMPOSITION[TOT_LAYER - 1], targhet_filename) != EXIT_SUCCESS) ||
-        (initArr(&output_data, BATCH_SIZE * LAYER_COMPOSITION[TOT_LAYER - 1], NULL) != EXIT_SUCCESS)
+        (initArrA(&input_data, LAYER_COMPOSITION[0], BATCH_SIZE, input_filename) != EXIT_SUCCESS) ||
+        (initArrA(&targhet_data, LAYER_COMPOSITION[TOT_LAYER - 1], BATCH_SIZE, targhet_filename) != EXIT_SUCCESS) ||
+        (initArrA(&output_data, LAYER_COMPOSITION[TOT_LAYER - 1], BATCH_SIZE, NULL) != EXIT_SUCCESS)
     ) {
         safeFree((void **) &LAYER_COMPOSITION);
         safeFree((void **) &ACTIVATION_FUNCTION);
@@ -93,9 +93,10 @@ int main(int argc, char *argv[]) {
     printf("- Total Layers: %d\n", TOT_LAYER);
     printf("- Batch Size: %d\n", BATCH_SIZE);
     printf("- Epochs: %d\n", EPOCH);
-    printf("- Log Loss every %d epochs\n\n", LOG_LOSS);
+    printf("- Log every: %d epochs\n\n", LOG_LOSS);
 
-    runTraining(LAYER_COMPOSITION, ACTIVATION_FUNCTION, TOT_LAYER, BATCH_SIZE, EPOCH, LOG_LOSS, weights, input_data, targhet_data, output_data, weights_filename);
+    runTraining(LAYER_COMPOSITION, ACTIVATION_FUNCTION, TOT_LAYER, BATCH_SIZE, EPOCH, LOG_LOSS, weights, input_data,
+                targhet_data, output_data, weights_filename);
 
     safeFree((void **) &LAYER_COMPOSITION);
     safeFree((void **) &ACTIVATION_FUNCTION);
@@ -121,10 +122,9 @@ int parse_layers(char *arg, uint32_t **LAYER_COMPOSITION, uint32_t *TOT_LAYER) {
         return EXIT_FAILURE;
     }
 
-    char *token = strtok(backup, ","); // modifies the original string by replacing delimiters with \0 !!!
-    do {
+    for (char *token = strtok(backup, ","); token != NULL; token = strtok(NULL, ",")) {
         (*TOT_LAYER)++;
-    } while ((token = strtok(NULL, ",")) != NULL);
+    }
 
     *LAYER_COMPOSITION = (uint32_t *) malloc((*TOT_LAYER) * sizeof(uint32_t));
     if (*LAYER_COMPOSITION == NULL) {
@@ -135,7 +135,7 @@ int parse_layers(char *arg, uint32_t **LAYER_COMPOSITION, uint32_t *TOT_LAYER) {
     }
 
     strcpy(backup, arg);
-    token = strtok(backup, ",");
+    char *token = strtok(backup, ",");
     for (int i = 0; i < *TOT_LAYER; i++) {
         (*LAYER_COMPOSITION)[i] = atoi(token);
         token = strtok(NULL, ",");
@@ -179,13 +179,26 @@ int parse_activation_func(char *arg, AIFES_E_activations **ACTIVATION_FUNCTION, 
     return EXIT_SUCCESS;
 }
 
-int initArr(float **arr, uint32_t size, char *initFile) {
+int initArrB(float **arr, uint32_t size, char *initFile) {
     *arr = (float *) malloc(size * sizeof(float));
     if (*arr == NULL) {
         fprintf(stderr, "Error allocating memory for an array (%s)\n", initFile);
         return EXIT_FAILURE;
     }
-    if (initFile != NULL && readCSV(initFile, *arr, size) != EXIT_SUCCESS) {
+    if (initFile != NULL && readCSVB(initFile, *arr, size) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
+
+
+int initArrA(float **arr, uint32_t colSize, uint32_t rowSize, char *initFile) {
+    *arr = (float *) malloc(colSize * rowSize * sizeof(float));
+    if (*arr == NULL) {
+        fprintf(stderr, "Error allocating memory for an array (%s)\n", initFile);
+        return EXIT_FAILURE;
+    }
+    if (initFile != NULL && readCSVA(initFile, *arr, colSize, rowSize) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
@@ -206,8 +219,8 @@ int runTraining(uint32_t *LAYER_COMPOSITION, AIFES_E_activations *ACTIVATION_FUN
 
     AIFES_E_training_parameter_fnn_f32 TRAIN_STRUCTURE = {
         .optimizer = AIfES_E_adam, // OR AIfES_E_sgd
-        .loss = AIfES_E_mse, // OR AIfES_E_crossentropy
-        .learn_rate = 0.05f,
+        .loss = AIfES_E_crossentropy, // OR AIfES_E_mse
+        .learn_rate = 0.001f,
         .batch_size = BATCH_SIZE,
         .epochs = EPOCH,
         .epochs_loss_print_interval = LOG_LOSS,
@@ -226,6 +239,7 @@ int runTraining(uint32_t *LAYER_COMPOSITION, AIFES_E_activations *ACTIVATION_FUN
     int8_t error = AIFES_E_training_fnn_f32(&input_tensor, &target_tensor, &NN_STRUCTURE, &TRAIN_STRUCTURE,
                                             &INIT_WEIGHTS, &output_tensor);
 
+    fprintf(stdout, "\n");
     switch (error) {
         case 0: fprintf(stdout, "Training OK\n");
             break;
