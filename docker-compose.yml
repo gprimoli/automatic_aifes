@@ -5,17 +5,9 @@ services:
       - "4000"
     environment:
       - NODE_ENV=production
-      - NVIDIA_VISIBLE_DEVICES=all  # Rende visibili tutte le GPU
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility  # Specifica le funzionalità CUDA
     deploy:
       mode: replicated
-      replicas: 8
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all  # Usa tutte le GPU disponibili
-              capabilities: [gpu]
+      replicas: 5
     networks:
       - gossip_net
 

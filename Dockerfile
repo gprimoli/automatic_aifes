@@ -13,34 +13,29 @@ WORKDIR /app
 # Creare un ambiente virtuale Python
 RUN python3 -m venv /app/venv
 
-# Attivare l'ambiente virtuale e installare le dipendenze Python
-RUN /app/venv/bin/pip install --upgrade pip
-RUN /app/venv/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu118
-RUN /app/venv/bin/pip install scikit-learn pandas 
-
-
-# Copia il package.json e package-lock.json nella directory di lavoro
-COPY package*.json ./
-
-# Installa le dipendenze del progetto
-RUN npm install
-
-# Copia il resto dei file del progetto nella directory di lavoro
-COPY . .
-
-# Espone la porta necessaria
-EXPOSE 4000
-
 # Impostare l'ambiente virtuale Python come variabile d'ambiente
 ENV VIRTUAL_ENV=/app/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# To build the AiFES adapter
-RUN apt-get install -y cmake
-RUN cd automatic_aifes && cmake . && make
+# Copia il package.json e package-lock.json nella directory di lavoro
+COPY package*.json ./
 
-# To split the dataset among all the nodes
-RUN python setup.py
+# Copia il resto dei file del progetto nella directory di lavoro
+COPY . .
+
+# Attivare l'ambiente virtuale e installare le dipendenze Python
+RUN /app/venv/bin/pip install --upgrade pip
+RUN /app/venv/bin/pip install scikit-learn pandas argparse && python setup.py
+
+# Installa le dipendenze del progetto
+RUN npm install
+
+# Espone la porta necessaria
+EXPOSE 4000
+
+# To build the AiFES adapter
+RUN apt-get install -y cmake && cd automatic_aifes && cmake . && make
+
 
 # Comando per eseguire il programma
-#CMD ["node", "gossip_learning.js"]
+CMD ["node", "gossip_learning.js"]

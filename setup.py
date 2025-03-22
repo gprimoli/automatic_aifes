@@ -11,7 +11,7 @@ import os
 n_nodes = 5
 
 # Create the folder for each node
-base_ip = "172.17.0."
+base_ip = "172.19.0."
 ip_nodes = [f"{base_ip}{i+2}" for i in range(n_nodes)]
 for i in range(n_nodes):
     os.mkdir(f'dataset/{ip_nodes[i]}')
