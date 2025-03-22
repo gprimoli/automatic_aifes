@@ -2,7 +2,7 @@
 FROM node:20
 
 # Installare Python e pip
-RUN apt-get update && apt-get install -y python3 python3-pip python3-venv
+RUN apt-get update && apt-get install -y python3 python3-pip python3-venv nano
 
 # Creare un link simbolico da python3 a python
 RUN ln -s /usr/bin/python3 /usr/bin/python

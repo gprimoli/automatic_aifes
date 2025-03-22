@@ -5,24 +5,30 @@ import pandas as pd
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
+import os
 
 ## Configuration parameters
 n_nodes = 5
 
-def split_and_save_csv(X, y, n_parts, prefix='dataset_part'):
+# Create the folder for each node
+base_ip = "172.17.0."
+ip_nodes = [f"{base_ip}{i+2}" for i in range(n_nodes)]
+for i in range(n_nodes):
+    os.mkdir(f'dataset/{ip_nodes[i]}')
+
+
+def split_and_save_csv(X, y, n_parts, prefix):
     base_chunk_size = len(X) // n_parts
     remainder = len(X) % n_parts
-    
     start_idx = 0
-    
     for i in range(n_parts):
         chunk_size = base_chunk_size + 1 if i < remainder else base_chunk_size
         end_idx = start_idx + chunk_size
         X_chunk = X.iloc[start_idx:end_idx]
         y_chunk = y.iloc[start_idx:end_idx]
-        X_chunk.to_csv(f'{prefix}_part_{i+1}.csv', index=False)
-        y_chunk.to_csv(f'{prefix}_target_part_{i+1}.csv', index=False)
-        print(f"Part {i+1} saved as {prefix}_part_{i+1}.csv")
+        X_chunk.to_csv(f'dataset/{ip_nodes[i]}/{prefix}_{ip_nodes[i]}.csv', index=False, header=False)
+        y_chunk.to_csv(f'dataset/{ip_nodes[i]}/{prefix}_{ip_nodes[i]}_y.csv', index=False, header=False)
+        print(f"Part {i+1} saved as {prefix}_{ip_nodes[i]}_training.csv")
         
         start_idx = end_idx
 
@@ -92,10 +98,10 @@ X_test_sample = X_test.loc[sample_indices_test]
 y_test_sample = y_test.loc[sample_indices_test]
 
 # Save the sampled data to CSV files
-X_train_sample.to_csv("X_train.csv", index=False)
-X_test_sample.to_csv("X_test.csv", index=False)
-y_train_sample.to_csv("y_train.csv", index=False, header=True)
-y_test_sample.to_csv("y_test.csv", index=False, header=True)
+X_train_sample.to_csv("dataset/X_train.csv", index=False, header=False)
+X_test_sample.to_csv("dataset/X_test.csv", index=False, header=False)
+y_train_sample.to_csv("dataset/y_train.csv", index=False, header=False)
+y_test_sample.to_csv("dataset/y_test.csv", index=False, header=False)
 
-split_and_save_csv(X_train_sample, y_train_sample, n_nodes, prefix='X_train_sample')
-split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='X_test_sample')
+split_and_save_csv(X_train_sample, y_train_sample, n_nodes, prefix='partition')
+split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='partition_test')

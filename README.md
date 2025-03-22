@@ -1,14 +1,19 @@
-Il progetto consiste in un'implementazione di gossip learning utilizzando Node.js, PyTorch e Docker.
+## Automatic AIfES for Gossiping Learning - An Intrusion Detection System (IDS) Use-Case
+The project consists of an implementation of gossip learning using Node.js, PyTorch, and Docker.
 
-Per avviare il progetto è necessaria l'installazione sul sistema di Docker, Docker Compose, Node.js (versione 20 o superiore), Python, PyTorch e, opzionalmente, CUDA.
+To start the project, Docker must be installed on the system. The neural network consists of 8 nodes, instantiated as Docker containers and defined in the docker-compose.yml file. The ```python-bridge``` library was used to execute Python code within Node.js. For communication between nodes, the ```libp2p``` library was used.
 
-La rete neurale è costituita da 8 nodi, istanziati come container Docker e definiti nel file docker-compose.yml.
-Attualmente, il dataset su cui viene effettuato l'apprendimento è CIFAR-10, definito all'interno del codice python nel file gossip_learning.js.
-Per eseguire codice python su Node.js è stata usata la libreria python-bridge.
-Per la comunicazione tra i nodi è stata usata la libreria libp2p.
+To start the learning process, run the following command from the terminal:
+```bash
+docker build --tag gossip-aifes
+docker run gossip-aifes
+```
 
-Per avviare l'apprendimento occorre lanciare da riga di comando il comando docker-compose build e in seguito docker-compose up (eventualmente con l'opzione -d per eseguire i container in background). Per fermare e rimuovere i container occorre lanciare il comando docker-compose down.
+To stop all the containers
+```bash
+docker down
+```
 
-Durante la build verranno scaricati sia i moduli di Node.js necessari per il progetto, sia il dataset su cui viene effettuato il training, salvati rispettivamente nelle cartelle node_modules/ e data/. Verrà inoltre creata una cartella models/, dove vengono salvati i modelli su cui i nodi effettuano il training.
-
-AGGIORNAMENTO 19/11/2024: I problemi di connessione tra i peer sono stati risolti. Ho aggiunto dei log nella funzione client_update e nella creazione di train loader e test loader per verificare l'integrità dei dati e la correttezza dei valori. Sembra che il training venga effettuato correttamente.
+To Do:
+- [ ] Define the model merging process, if this should be done by Node.js or by the C-Code. To change on line 108 of ```gossip_learning.js```.
+- [ ] Define the protocol for weights exchange, currently it sends the weights to a random node as written on line 225 of ```gossip_learning.js```.
