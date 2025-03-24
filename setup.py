@@ -89,11 +89,11 @@ X_train = pd.DataFrame(X_train_scaled, columns=columns, index=X_train_indices)
 X_test = pd.DataFrame(X_test_scaled, columns=columns, index=X_test_indices)
 
 # Sampling 5% of the data
-sample_indices_train = X_train.sample(frac=0.05, random_state=42).index
+sample_indices_train = X_train.sample(frac=0.5, random_state=42).index
 X_train_sample = X_train.loc[sample_indices_train]
 y_train_sample = y_train.loc[sample_indices_train]
 
-sample_indices_test = X_test.sample(frac=0.05, random_state=42).index
+sample_indices_test = X_test.sample(frac=0.5, random_state=42).index
 X_test_sample = X_test.loc[sample_indices_test]
 y_test_sample = y_test.loc[sample_indices_test]
 

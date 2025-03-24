@@ -14,3 +14,9 @@ services:
 networks:
   gossip_net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16
+          ip_range: 172.19.0.0/24
+          gateway: 172.19.0.1
+    
