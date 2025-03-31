@@ -30,7 +30,9 @@ bool readCSV(char *fileName, void *arr, uint32_t size);
 
 void safe_free(void **ptr);
 
-void free_all_resources(int count, ...);
+void free_all_resources(uint32_t count, ...);
+
+int argmax(float *arr, uint32_t size);
 
 #define INIT_ARR(ptr, type, count) \
 init_and_fill(NULL, (void **)&(ptr), sizeof(type), count, NULL)

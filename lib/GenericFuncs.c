@@ -18,7 +18,7 @@ void safe_free(void **ptr) {
     }
 }
 
-void free_all_resources(int count, ...) {
+void free_all_resources(uint32_t count, ...) {
     va_list args;
     va_start(args, count);
     for (int i = 0; i < count; ++i) {
@@ -91,3 +91,17 @@ bool readCSV(char *fileName, void *arr, uint32_t size) {
     fclose(fp);
     return true;
 }
+
+int argmax(float *arr, uint32_t size) {
+    //TODO: wrapper della funzione
+    int max_idx = 0;
+    float max_val = arr[0];
+    for (int i = 1; i < size; i++) {
+        if (arr[i] > max_val) {
+            max_val = arr[i];
+            max_idx = i;
+        }
+    }
+    return max_idx;
+}
+
