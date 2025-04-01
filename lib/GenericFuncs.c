@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include <errno.h>
 #include "Log.h"
 #include "GenericFuncs.h"
 
