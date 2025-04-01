@@ -1,7 +1,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
-
+#include <string.h>
 #include "aifes.h"
 #include "Log.h"
 #include "GenericFuncs.h"
