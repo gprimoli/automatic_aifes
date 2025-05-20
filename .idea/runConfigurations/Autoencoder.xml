@@ -1,7 +1,0 @@
-<component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Autoencoder" type="CMakeRunConfiguration" factoryName="Application" PROGRAM_PARAMS="-l 2,3,1 -s 8 -a relu,sigmoid -b 1 -e 1000 -i C:\\Users\\play_\\CLionProjects\\Autoencoder\\dataset\\XOR_input -t C:\\Users\\play_\\CLionProjects\\Autoencoder\\dataset\\XOR_target" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Autoencoder" TARGET_NAME="Autoencoder" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="Autoencoder" RUN_TARGET_NAME="Autoencoder">
-    <method v="2">
-      <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-    </method>
-  </configuration>
-</component>
