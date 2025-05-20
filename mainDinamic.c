@@ -66,14 +66,14 @@ int main(int argc, char *argv[]) {
     aialgo_init_model_for_training(&model, optimizer);
 
 
-    // for (int i = 0; i < ctx.epochs; i++) {
-    //     float loss;
-    //
-    //     aialgo_train_model(&model, &x_train, &y_train, optimizer, ctx.batch_size);
-    //
-    //     aialgo_calc_loss_model_f32(&model, &x_test, &y_test, &loss);
-    //     LOG_INFO("Test loss: %f", loss);
-    // }
+    for (int i = 0; i < ctx.epochs; i++) {
+        float loss;
+
+        aialgo_train_model(&model, &x_train, &y_train, optimizer, ctx.batch_size);
+
+        aialgo_calc_loss_model_f32(&model, &x_test, &y_test, &loss);
+        LOG_INFO("Test loss: %f", loss);
+    }
 
 
     LOG_INFO("%llu byte", mem_total());

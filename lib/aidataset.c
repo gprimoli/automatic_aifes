@@ -18,6 +18,12 @@
 
 bool readCSV(char *filepath, float **arr, size_t size) {
     FILE *f = fopen(filepath, "r");
+
+    if (f == NULL) {
+        LOG_ERROR("Failed to open file %s", filepath);
+        SAFE_EXIT_FAILURE;
+    }
+
     *arr = mem_calloc(size, sizeof(float));
     char line[15360] = {0};
 
