@@ -21,6 +21,7 @@ bool readCSV(char *filepath, float **arr, size_t size) {
 
     if (f == NULL) {
         LOG_ERROR("Failed to open file %s", filepath);
+        fclose(f);
         SAFE_EXIT_FAILURE;
     }
 

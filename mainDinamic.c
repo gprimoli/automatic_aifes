@@ -8,6 +8,83 @@
 
 bool build_model(aiconfiguration_t *ctx, aimodel_t *model);
 
+int argmax(aitensor_t *aitensor) {
+    const float *data = aitensor->data;
+    float max = data[0];
+    int ixd = 0;
+
+    for (int i = 1; i < aitensor->shape[1]; i++) {
+        if (data[i] > max) {
+            max = data[i];
+            ixd = i;
+        }
+    }
+    return ixd;
+}
+
+bool aialgo_calc_loss_acc_model_f32(aimodel_t *model, aitensor_t *input_tensor, aitensor_t *target_tensor,
+                                    float *loss_result, float *accuracy_result) {
+    uint32_t i;
+    float loss;
+    uint16_t batch_size = input_tensor->shape[0];
+    uint16_t batch_slice_size = model->input_layer->result.shape[0]; // Size of a batch that is processed by one forward pass
+
+    aitensor_t input_batch;
+    uint16_t input_batch_shape[input_tensor->dim];
+    input_batch.dtype = input_tensor->dtype;
+    input_batch.dim = input_tensor->dim;
+    input_batch.shape = input_batch_shape;
+    input_batch.tensor_params = input_tensor->tensor_params;
+    aitensor_t target_batch;
+    uint16_t target_batch_shape[target_tensor->dim];
+    target_batch.dtype = target_tensor->dtype;
+    target_batch.dim = target_tensor->dim;
+    target_batch.shape = target_batch_shape;
+    target_batch.tensor_params = target_tensor->tensor_params;
+
+    uint32_t input_multiplier = 1;
+    for(i = input_tensor->dim - 1; i > 0; i--)
+    {
+        input_multiplier *= input_tensor->shape[i];
+        input_batch_shape[i] = input_tensor->shape[i];
+    }
+    input_multiplier *= input_tensor->dtype->size;
+    input_batch_shape[0] = batch_slice_size;
+    uint32_t target_multiplier = 1;
+    for(i = target_tensor->dim - 1; i > 0; i--)
+    {
+        target_multiplier *= target_tensor->shape[i];
+        target_batch_shape[i] = target_tensor->shape[i];
+    }
+    target_multiplier *= target_tensor->dtype->size;
+    target_batch_shape[0] = batch_slice_size;
+
+    aialgo_set_training_mode_model(model, FALSE);
+    aialgo_set_batch_mode_model(model, FALSE);
+
+    int correct = 0;
+    *loss_result = 0;
+    for (i = 0; i < batch_size / batch_slice_size; i++) {
+        input_batch.data = input_tensor->data + i * batch_slice_size * input_multiplier;
+        target_batch.data = target_tensor->data + i * batch_slice_size * target_multiplier;
+
+        aitensor_t *result_tensor = aialgo_forward_model(model, &input_batch);
+        model->loss->calc_loss(model->loss, &target_batch, &loss);
+        *loss_result += loss;
+
+        int pred_label = argmax(result_tensor);
+        int true_label = argmax(&target_batch);
+
+        if (pred_label == true_label) {
+            correct++;
+        }
+    }
+
+    *accuracy_result = (float) correct / (float) i;
+    return true;
+}
+
+
 int main(int argc, char *argv[]) {
     srand(time(NULL));
 
@@ -20,9 +97,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-    uint16_t input_shape[] = {ctx.batch_size, ctx.input_shape[0], ctx.input_shape[1], ctx.input_shape[2]};
-    uint16_t output_shape[] = {ctx.batch_size, ctx.layers[ctx.num_layer - 1].params[NEURONS][0]};
-
+    uint16_t input_shape[] = {1, ctx.input_shape[0], ctx.input_shape[1], ctx.input_shape[2]};
     ailayer_input_f32_t input_layer = AILAYER_INPUT_F32_A(4, input_shape);
     model.input_layer = ailayer_input_f32_default(&input_layer);
 
@@ -30,10 +105,16 @@ int main(int argc, char *argv[]) {
         SAFE_EXIT_FAILURE;
     }
 
-    aitensor_t x_train = AITENSOR_4D_F32(input_shape, d.x_train);
-    aitensor_t y_train = AITENSOR_2D_F32(output_shape, d.y_train);
-    aitensor_t x_test = AITENSOR_4D_F32(input_shape, d.x_test);
-    aitensor_t y_test = AITENSOR_2D_F32(output_shape, d.y_test);
+    uint16_t input_shape_training[] = {ctx.sample_train, ctx.input_shape[0], ctx.input_shape[1], ctx.input_shape[2]};
+    uint16_t output_shape_training[] = {ctx.sample_train, ctx.layers[ctx.num_layer - 1].params[NEURONS][0]};
+
+    uint16_t input_shape_test[] = {ctx.sample_test, ctx.input_shape[0], ctx.input_shape[1], ctx.input_shape[2]};
+    uint16_t output_shape_test[] = {ctx.sample_test, ctx.layers[ctx.num_layer - 1].params[NEURONS][0]};
+
+    aitensor_t x_train = AITENSOR_4D_F32(input_shape_training, d.x_train);
+    aitensor_t y_train = AITENSOR_2D_F32(output_shape_training, d.y_train);
+    aitensor_t x_test = AITENSOR_4D_F32(input_shape_test, d.x_test);
+    aitensor_t y_test = AITENSOR_2D_F32(output_shape_test, d.y_test);
 
     aialgo_compile_model(&model);
     uint32_t parameter_memory_size = aialgo_sizeof_parameter_memory(&model);
@@ -65,18 +146,22 @@ int main(int argc, char *argv[]) {
 
     aialgo_init_model_for_training(&model, optimizer);
 
+    aiprint("\n-------------- Model structure ---------------\n");
+    aialgo_print_model_structure(&model);
+    aiprint("----------------------------------------------\n\n");
 
-    for (int i = 0; i < ctx.epochs; i++) {
-        float loss;
+    // float loss, acc;
+    // for (int i = 0; i < ctx.epochs; i++) {
+    //     LOG_INFO("Epoc: %d", i);
+    //     aialgo_train_model(&model, &x_train, &y_train, optimizer, ctx.batch_size);
+    //     aialgo_calc_loss_acc_model_f32(&model, &x_test, &y_test, &loss, &acc);
+    //     LOG_INFO("Test loss: %f\nTest acc:%f", loss, acc);
+    //
+    //     // aialgo_calc_loss_model_f32(&model, &x_test, &y_test, &loss); //original
+    //     // if (loss < 5) break;
+    // }
 
-        aialgo_train_model(&model, &x_train, &y_train, optimizer, ctx.batch_size);
-
-        aialgo_calc_loss_model_f32(&model, &x_test, &y_test, &loss);
-        LOG_INFO("Test loss: %f", loss);
-    }
-
-
-    LOG_INFO("%llu byte", mem_total());
+    LOG_INFO("Freed %llu byte", mem_total());
     SAFE_EXIT_SUCCESS;
 }
 
@@ -136,6 +221,10 @@ bool build_model(aiconfiguration_t *ctx, aimodel_t *model) {
                 LOG_ERROR("Non implemented layer! layer: %s", layer_type_to_string(current.type));
                 return false;
             }
+        }
+
+        if (current.type == MAXPOOL2D || current.type == FLATTEN) {
+            continue;
         }
 
         switch (current.activation) {
