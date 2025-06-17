@@ -23,7 +23,7 @@ const path_dir_models = root_path + 'models/'
 const my_model_file = root_path + 'weights';
 const my_training_x_file = root_path + 'dataset/' + my_ip + '/partition_' + my_ip + '.csv';
 const my_training_y_file = root_path + 'dataset/' + my_ip + '/partition_' + my_ip + '_y.csv';
-const NUM_ROUNDS = 150
+const NUM_ROUNDS = 10
 const NUM_EPOCHS_PER_ROUND = 1000
 
 const fileBuffer =  fs.readFileSync(my_training_y_file);
@@ -68,7 +68,8 @@ async function on_model_received({ stream }) {
         // Call the Autoencoder to compute the new model
         let weights_option = "";
         if (fs.existsSync(my_model_file)) weights_option = ` -w ${my_model_file}`;
-        let cmd_to_exec = root_path + "automatic_aifes/Autoencoder -l 15,3,1 -a relu,sigmoid -b 32 -e " + NUM_EPOCHS_PER_ROUND + " -i " + my_training_x_file + " -t " + my_training_y_file + weights_option + " -s " + dataset_length;
+        // let cmd_to_exec = root_path + "automatic_aifes/automatic_aifes -l 15,3,1 -a relu,sigmoid -b 32 -e " + NUM_EPOCHS_PER_ROUND + " -i " + my_training_x_file + " -t " + my_training_y_file + weights_option + " -s " + dataset_length;
+        let cmd_to_exec = root_path + "automatic_aifes/automatic_aifes config.ini";
         console.log("Executing " + cmd_to_exec);
         exec(cmd_to_exec, (error, stdout, stderr) => {
             if (error) {
@@ -108,7 +109,8 @@ const createNode = async () => {
 // JUST FOR TEST TO REMOVE IN PROD, or maybe to mantain for the first training.
 let weights_option = "";
 if (fs.existsSync(my_model_file)) weights_option = ` -w ${my_model_file}`;
-const cmd_to_exec = root_path + "automatic_aifes/Autoencoder -l 15,3,1 -a relu,sigmoid -b 32 -e " + NUM_EPOCHS_PER_ROUND + " -i " + my_training_x_file + " -t " + my_training_y_file + weights_option + " -s " + dataset_length;
+//const cmd_to_exec = root_path + "automatic_aifes/automatic_aifes -l 15,3,1 -a relu,sigmoid -b 32 -e " + NUM_EPOCHS_PER_ROUND + " -i " + my_training_x_file + " -t " + my_training_y_file + weights_option + " -s " + dataset_length;
+const cmd_to_exec = root_path + "automatic_aifes/automatic_aifes config.ini";
 console.log("Executing " + cmd_to_exec);
 await exec(cmd_to_exec, (error, stdout, stderr) => {
     if (error) {

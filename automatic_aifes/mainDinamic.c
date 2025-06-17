@@ -1,12 +1,5 @@
 #include <time.h>
-<<<<<<< HEAD:automatic_aifes/mainDinamic.c
-#include <unistd.h>
-#include <stdbool.h>
-#include <string.h>
-#include "aifes.h"
-=======
 
->>>>>>> origin/main:mainDinamic.c
 #include "Log.h"
 #include "aifes.h"
 #include "aidataset.h"
