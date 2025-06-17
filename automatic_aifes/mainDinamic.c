@@ -1,392 +1,320 @@
 #include <time.h>
+<<<<<<< HEAD:automatic_aifes/mainDinamic.c
 #include <unistd.h>
 #include <stdbool.h>
 #include <string.h>
 #include "aifes.h"
+=======
+
+>>>>>>> origin/main:mainDinamic.c
 #include "Log.h"
-#include "GenericFuncs.h"
+#include "aifes.h"
+#include "aidataset.h"
+#include "MemManager.h"
+#include "aiconfiguration.h"
 
-void print_usage(char *prog_name) {
-    LOG_ERROR(
-        "Usage: %s [OPTIONS]\n\n"
-        "Options:\n"
-        "  -b <batch_size>              Number of samples per training batch (e.g., 32, 64)\n"
-        "  -e <epoch>                   Number of training epochs (e.g., 100)\n"
-        "  -s <dataset_size>            Number of samples in input\n"
-        "  -l <layer_composition>       Layer structure, e.g., \"784,128,64,10\"\n"
-        "  -a <activation_functions>    Activations per layer, e.g., \"relu-relu-softmax\"\n"
-        "  -i <input_file>              Path to input CSV file with features\n"
-        "  -t <target_file>             (Optional) Path to CSV file with expected outputs\n"
-        "  -w <weights_file>            (Optional) File to load/store weights\n"
-        "  -v <log_level>               (Optional) Log level (1,2,3)\n"
-        "  -h                           Show this help message and exit\n\n"
-        "Example:\n"
-        "  %s -l 784,64,10 -a relu,softmax -e 100 -b 64 -i input.csv -t target.csv -s 200 -w weights.bin",
-        prog_name, prog_name
-    );
-}
+bool build_model(aiconfiguration_t *ctx, aimodel_t *model);
 
-void printLoss(float loss) {
-    LOG_INFO("Loss: %f", loss);
-}
+int argmax(aitensor_t *aitensor) {
+    const float *data = aitensor->data;
+    float max = data[0];
+    int ixd = 0;
 
-bool parse_layers(char *arg, uint32_t **LAYER_COMPOSITION, uint32_t *TOT_LAYER) {
-    if (!arg || !LAYER_COMPOSITION || !TOT_LAYER) return false;
-
-    *TOT_LAYER = 0;
-    char *backup = strdup(arg);
-    if (backup == NULL) {
-        LOG_ERROR("Memory allocation failed for backup");
-        return false;
-    }
-
-    for (char *token = strtok(backup, ","); token != NULL; token = strtok(NULL, ",")) {
-        (*TOT_LAYER)++;
-    }
-    FREE_ALL_RESOURCES(backup);
-
-    *LAYER_COMPOSITION = (uint32_t *) malloc((*TOT_LAYER) * sizeof(uint32_t));
-    if (*LAYER_COMPOSITION == NULL) {
-        LOG_ERROR("Memory allocation failed for LAYER_COMPOSITION");
-        return false;
-    }
-
-    char *token = strtok(arg, ",");
-    for (int i = 0; i < *TOT_LAYER; i++) {
-        (*LAYER_COMPOSITION)[i] = atoi(token);
-        token = strtok(NULL, ",");
-    }
-    return true;
-}
-
-bool parse_activations(char *arg, AIFES_E_activations **ACTIVATION_FUNCTION, uint32_t TOT_LAYER) {
-    if (!arg || !ACTIVATION_FUNCTION || TOT_LAYER < 2) return false;
-
-    *ACTIVATION_FUNCTION = (AIFES_E_activations *) malloc((TOT_LAYER - 1) * sizeof(AIFES_E_activations));
-    if (*ACTIVATION_FUNCTION == NULL) {
-        LOG_ERROR("Memory allocation failed for ACTIVATION_FUNCTION");
-        return false;
-    }
-
-    char *token = strtok(arg, ","); // modifies the original string by replacing delimiters with \0 !!!
-    for (int i = 0; i < TOT_LAYER - 1; i++) {
-        if (token == NULL) {
-            LOG_ERROR("Not enough activation functions provided.");
-            FREE_ALL_RESOURCES(ACTIVATION_FUNCTION);
-            return false;
+    for (int i = 1; i < aitensor->shape[1]; i++) {
+        if (data[i] > max) {
+            max = data[i];
+            ixd = i;
         }
-        if (strcmp(token, "relu") == 0) {
-            (*ACTIVATION_FUNCTION)[i] = AIfES_E_relu;
-        } else if (strcmp(token, "sigmoid") == 0) {
-            (*ACTIVATION_FUNCTION)[i] = AIfES_E_sigmoid;
-        } else if (strcmp(token, "softmax") == 0) {
-            (*ACTIVATION_FUNCTION)[i] = AIfES_E_softmax;
-        } else if (strcmp(token, "leaky_relu") == 0) {
-            (*ACTIVATION_FUNCTION)[i] = AIfES_E_leaky_relu;
-        } else if (strcmp(token, "elu") == 0) {
-            (*ACTIVATION_FUNCTION)[i] = AIfES_E_elu;
-        } else if (strcmp(token, "tanh") == 0) {
-            (*ACTIVATION_FUNCTION)[i] = AIfES_E_tanh;
-        } else if (strcmp(token, "softsign") == 0) {
-            (*ACTIVATION_FUNCTION)[i] = AIfES_E_softsign;
-        } else if (strcmp(token, "linear") == 0) {
-            (*ACTIVATION_FUNCTION)[i] = AIfES_E_linear;
-        } else {
-            LOG_ERROR("Unknown activation function: '%s'", token);
-            FREE_ALL_RESOURCES(ACTIVATION_FUNCTION);
-            return false;
-        }
-        token = strtok(NULL, ",");
     }
-    return true;
+    return ixd;
 }
 
-bool parse_args(int argc, char *argv[], uint32_t *batch_size, uint32_t *epoch, uint32_t *log_loss,
-                uint32_t *dataset_training, uint32_t *dataset_testing, char **layer_str, char **activation_str,
-                char **weights_filename,
-                char **input_filename, char **target_filename) {
-    int opt;
-    while ((opt = getopt(argc, argv, "b:e:l:a:w:i:t:s:v:h")) != -1) {
-        switch (opt) {
-            case 'b':
-                *batch_size = atoi(optarg);
-                break;
-            case 'e':
-                *epoch = atoi(optarg);
-                *log_loss = *epoch / 5;
-                break;
-            case 's':
-                uint32_t dataset_size = atoi(optarg);
-                *dataset_training = (uint32_t) dataset_size * 0.8;
-                *dataset_testing = (uint32_t) dataset_size - *dataset_training;
-                break;
-            case 'l':
-                *layer_str = optarg;
-                break;
-            case 'a':
-                *activation_str = optarg;
-                break;
-            case 'w':
-                *weights_filename = optarg;
-                break;
-            case 'i':
-                *input_filename = optarg;
-                break;
-            case 't':
-                *target_filename = optarg;
-                break;
-            case 'v':
-                CURRENT_LOG_LEVEL = atoi(optarg);
-                break;
-            case 'h': default:
-                print_usage(argv[0]);
-                return false;
+bool aialgo_calc_loss_acc_model_f32(aimodel_t *model, aitensor_t *input_tensor, aitensor_t *target_tensor,
+                                    float *loss_result, float *accuracy_result) {
+    uint32_t i;
+    float loss;
+    uint16_t batch_size = input_tensor->shape[0];
+    uint16_t batch_slice_size = model->input_layer->result.shape[0]; // Size of a batch that is processed by one forward pass
+
+    aitensor_t input_batch;
+    uint16_t input_batch_shape[input_tensor->dim];
+    input_batch.dtype = input_tensor->dtype;
+    input_batch.dim = input_tensor->dim;
+    input_batch.shape = input_batch_shape;
+    input_batch.tensor_params = input_tensor->tensor_params;
+    aitensor_t target_batch;
+    uint16_t target_batch_shape[target_tensor->dim];
+    target_batch.dtype = target_tensor->dtype;
+    target_batch.dim = target_tensor->dim;
+    target_batch.shape = target_batch_shape;
+    target_batch.tensor_params = target_tensor->tensor_params;
+
+    uint32_t input_multiplier = 1;
+    for(i = input_tensor->dim - 1; i > 0; i--)
+    {
+        input_multiplier *= input_tensor->shape[i];
+        input_batch_shape[i] = input_tensor->shape[i];
+    }
+    input_multiplier *= input_tensor->dtype->size;
+    input_batch_shape[0] = batch_slice_size;
+    uint32_t target_multiplier = 1;
+    for(i = target_tensor->dim - 1; i > 0; i--)
+    {
+        target_multiplier *= target_tensor->shape[i];
+        target_batch_shape[i] = target_tensor->shape[i];
+    }
+    target_multiplier *= target_tensor->dtype->size;
+    target_batch_shape[0] = batch_slice_size;
+
+    aialgo_set_training_mode_model(model, FALSE);
+    aialgo_set_batch_mode_model(model, FALSE);
+
+    int correct = 0;
+    *loss_result = 0;
+    for (i = 0; i < batch_size / batch_slice_size; i++) {
+        input_batch.data = input_tensor->data + i * batch_slice_size * input_multiplier;
+        target_batch.data = target_tensor->data + i * batch_slice_size * target_multiplier;
+
+        aitensor_t *result_tensor = aialgo_forward_model(model, &input_batch);
+        model->loss->calc_loss(model->loss, &target_batch, &loss);
+        *loss_result += loss;
+
+        int pred_label = argmax(result_tensor);
+        int true_label = argmax(&target_batch);
+
+        if (pred_label == true_label) {
+            correct++;
         }
     }
 
-    if (!(*layer_str) || !(*activation_str) || !(*input_filename) || !(*target_filename) || !(*dataset_training) || !(*
-            dataset_testing) || *batch_size > *dataset_training) {
-        LOG_ERROR("Missing required arguments.");
-        print_usage(argv[0]);
-        return false;
-    }
-
+    *accuracy_result = (float) correct / (float) i;
     return true;
 }
 
-bool runTraining(uint32_t *LAYER_COMPOSITION, AIFES_E_activations *ACTIVATION_FUNCTION, uint32_t TOT_LAYER,
-                 uint32_t DATASET_SIZE, uint32_t BATCH_SIZE, uint32_t EPOCH, uint32_t LOG_LOSS, float *weights,
-                 float *input, float *target, float *output, char *weights_filename) {
-    AIFES_E_model_parameter_fnn_f32 NN_STRUCTURE = {
-        .layer_count = TOT_LAYER,
-        .fnn_structure = LAYER_COMPOSITION,
-        .fnn_activations = ACTIVATION_FUNCTION,
-        .flat_weights = weights,
-    };
-    AIFES_E_init_weights_parameter_fnn_f32 INIT_WEIGHTS = {
-        .init_weights_method = weights_filename != NULL ? AIfES_E_init_no_init : AIfES_E_init_glorot_uniform,
-    };
-
-    AIFES_E_training_parameter_fnn_f32 TRAIN_STRUCTURE = {
-        .optimizer = AIfES_E_adam, // OR AIfES_E_sgd
-        .loss = AIfES_E_crossentropy, // OR AIfES_E_mse
-        .learn_rate = 0.001f,
-        .batch_size = BATCH_SIZE,
-        .epochs = EPOCH,
-        .epochs_loss_print_interval = LOG_LOSS,
-        .loss_print_function = printLoss,
-        .early_stopping = AIfES_E_early_stopping_off, // OR AIfES_E_early_stopping_on
-        .early_stopping_target_loss = 0.004f,
-    };
-
-    uint16_t input_shape[] = {DATASET_SIZE, LAYER_COMPOSITION[0]};
-    uint16_t target_shape[] = {DATASET_SIZE, LAYER_COMPOSITION[TOT_LAYER - 1]};
-
-    aitensor_t input_tensor = AITENSOR_2D_F32(input_shape, input);
-    aitensor_t target_tensor = AITENSOR_2D_F32(target_shape, target);
-    aitensor_t output_tensor = AITENSOR_2D_F32(target_shape, output);
-
-    int8_t error = AIFES_E_training_fnn_f32(&input_tensor, &target_tensor, &NN_STRUCTURE, &TRAIN_STRUCTURE,
-                                            &INIT_WEIGHTS, &output_tensor);
-
-    switch (error) {
-        case 0: LOG_INFO("Training OK");
-            break;
-        case -1: LOG_ERROR("Tensor dtype");
-            break;
-        case -2: LOG_ERROR("Tensor shape: Data Number");
-            break;
-        case -3: LOG_ERROR("Input tensor shape does not correspond to ANN inputs");
-            break;
-        case -4: LOG_ERROR("Output tensor shape does not correspond to ANN outputs");
-            break;
-        case -5: LOG_ERROR("Use the crossentropy as loss for softmax");
-            break;
-        case -6: LOG_ERROR("learn_rate or sgd_momentum negative");
-            break;
-        case -7: LOG_ERROR("Init uniform weights min - max wrongn");
-            break;
-        case -8: LOG_ERROR("batch_size: min = 1 / max = Number of training data");
-            break;
-        case -9: LOG_ERROR("Unknown activation function");
-            break;
-        case -10: LOG_ERROR("Unknown loss function");
-            break;
-        case -11: LOG_ERROR("Unknown init weights method");
-            break;
-        case -12: LOG_ERROR("Unknown optimizer");
-            break;
-        case -13: LOG_ERROR("Not enough memory");
-            break;
-        default: LOG_ERROR("Unknown error");
-    }
-
-    if (!error) {
-        save_float_array(weights_filename, weights, AIFES_E_flat_weights_number_fnn_f32(LAYER_COMPOSITION, TOT_LAYER));
-    }
-    return error == 0 ? true : false;
-}
-
-bool runInference(uint32_t *LAYER_COMPOSITION, AIFES_E_activations *ACTIVATION_FUNCTION, uint32_t TOT_LAYER,
-                  uint32_t DATASET_SIZE, float *weights, float *input, float *target, float *output) {
-    AIFES_E_model_parameter_fnn_f32 NN_STRUCTURE = {
-        .layer_count = TOT_LAYER,
-        .fnn_structure = LAYER_COMPOSITION,
-        .fnn_activations = ACTIVATION_FUNCTION,
-        .flat_weights = weights,
-    };
-
-    uint16_t input_shape[] = {DATASET_SIZE, LAYER_COMPOSITION[0]};
-    uint16_t output_shape[] = {DATASET_SIZE, LAYER_COMPOSITION[TOT_LAYER - 1]};
-
-    aitensor_t input_tensor = AITENSOR_2D_F32(input_shape, input);
-    aitensor_t output_tensor = AITENSOR_2D_F32(output_shape, output);
-
-    int8_t error = AIFES_E_inference_fnn_f32(&input_tensor, &NN_STRUCTURE, &output_tensor);
-
-    switch (error) {
-        case 0:
-            //TODO: do it better
-            LOG_INFO("Inference OK");
-
-            if (LAYER_COMPOSITION[TOT_LAYER - 1] == 1) {
-                uint32_t TP = 0, FP = 0, FN = 0, TN = 0;
-                for (int i = 0; i < DATASET_SIZE; ++i) {
-                    const int pred = output[i] >= 0.5 ? 1 : 0;
-                    if (pred == 1 && target[i] == 1) TP++;
-                    else if (pred == 1 && target[i] == 0) FP++;
-                    else if (pred == 0 && target[i] == 1) FN++;
-                    else if (pred == 0 && target[i] == 0) TN++;
-                }
-
-                const float precision = TP + FP == 0 ? 0 : (float)TP / (float) (TP + FP);
-                const float recall    = TP + FN == 0 ? 0 : (float)TP / (float) (TP + FN);
-                const float f1  = precision + recall == 0 ? 0 : 2 * (precision * recall) / (precision + recall);
-                LOG_INFO("Accuracy: %f", ((float)(TP + TN) / (float) DATASET_SIZE) * 100);
-                LOG_INFO("Precision: %f  Recall: %f  F1 Score: %f", precision, recall, f1);
-            }else {
-                const uint32_t num_classes = LAYER_COMPOSITION[TOT_LAYER - 1];
-                uint32_t *TP = calloc(num_classes, sizeof(uint32_t));
-                uint32_t *FP = calloc(num_classes, sizeof(uint32_t));
-                uint32_t *FN = calloc(num_classes, sizeof(uint32_t));
-
-                if (TP != NULL && FP != NULL && FN != NULL) {
-                    uint32_t correct = 0;
-                    for (int i = 0; i < DATASET_SIZE; i++) {
-                        const int pred = argmax(&output[i * num_classes], num_classes);
-                        const int true_label = (int) target[i];
-
-                        if (pred == true_label) {
-                            correct++;
-                            TP[pred]++;
-                        } else {
-                            FP[pred]++;
-                            FN[true_label]++;
-                        }
-                    }
-
-                    LOG_INFO("Accuracy: %f", ((float) correct / (float) DATASET_SIZE) * 100);
-
-                    for (int c = 0; c < num_classes; c++) {
-                        const uint32_t tp = TP[c];
-                        const uint32_t fp = FP[c];
-                        const uint32_t fn = FN[c];
-                        const float precision = tp + fp == 0 ? 0 : (float) tp / (float) (tp + fp);
-                        const float recall = tp + fn == 0 ? 0 : (float) tp / (float) (tp + fn);
-                        const float f1 = precision + recall == 0 ? 0 : 2 * (precision * recall) / (precision + recall);
-
-                        LOG_INFO("Class %d - Precision: %f  Recall: %f  F1 Score: %f", c, precision, recall, f1);
-                    }
-                }
-                FREE_ALL_RESOURCES(TP, FP, FN);
-            }
-            break;
-        case -1:
-            LOG_ERROR("Tensor dtype");
-            break;
-        case -2:
-            LOG_ERROR("Tensor shape: Data Number");
-            break;
-        case -3:
-            LOG_ERROR("Input tensor shape does not correspond to ANN inputs");
-            break;
-        case -4:
-            LOG_ERROR("Output tensor shape does not correspond to ANN outputs");
-            break;
-        case -5:
-            LOG_ERROR("Unknown activation function");
-            break;
-        case -6:
-            LOG_ERROR("Not enough memory");
-            break;
-        default:
-            LOG_ERROR("Unknown error");
-    }
-
-    return error == 0 ? true : false;
-}
 
 int main(int argc, char *argv[]) {
     srand(time(NULL));
 
-    uint32_t BATCH_SIZE = 0;
-    uint32_t EPOCH = 0;
-    uint32_t LOG_LOSS = 0;
-    uint32_t TOT_LAYER = 0;
-    uint32_t DATASET_TRAINING = 0;
-    uint32_t DATASET_TESTING = 0;
-    uint32_t DATASET_SIZE = 0;
+    aiconfiguration_t ctx = {0};
+    aidataset_t d = {0};
+    aimodel_t model = {0};
 
-    uint32_t *LAYER_COMPOSITION = NULL;
-    AIFES_E_activations *ACTIVATION_FUNCTION = NULL;
-    float *weights_data = NULL;
-    float *input_data = NULL, *target_data = NULL, *output_data = NULL;
-    float *test_input = NULL, *test_target = NULL, *test_output = NULL;
-
-    char *weights_filename = NULL, *input_filename = NULL, *target_filename = NULL;
-    char *layer_string = NULL, *activation_string = NULL;
-
-    if (!parse_args(argc, argv, &BATCH_SIZE, &EPOCH, &LOG_LOSS, &DATASET_TRAINING, &DATASET_TESTING, &layer_string,
-                    &activation_string, &weights_filename, &input_filename, &target_filename)) {
-        return EXIT_FAILURE;
+    if (argc < 2 || !load_config(argv[1], &ctx) || !load_dataset(ctx, &d)) {
+        SAFE_EXIT_FAILURE;
     }
 
 
-    DATASET_SIZE = DATASET_TRAINING + DATASET_TESTING;
+    uint16_t input_shape[] = {1, ctx.input_shape[0], ctx.input_shape[1], ctx.input_shape[2]};
+    ailayer_input_f32_t input_layer = AILAYER_INPUT_F32_A(4, input_shape);
+    model.input_layer = ailayer_input_f32_default(&input_layer);
 
-    if (!parse_layers(layer_string, &LAYER_COMPOSITION, &TOT_LAYER) ||
-        !parse_activations(activation_string, &ACTIVATION_FUNCTION, TOT_LAYER) ||
-        !INIT_AND_FILL_ARR(weights_filename, weights_data, float,
-                           AIFES_E_flat_weights_number_fnn_f32(LAYER_COMPOSITION, TOT_LAYER), readCSV) ||
-        !INIT_AND_FILL_ARR(input_filename, input_data, float, LAYER_COMPOSITION[0] * DATASET_SIZE,
-                           readCSV) ||
-        !INIT_AND_FILL_ARR(target_filename, target_data, float, LAYER_COMPOSITION[TOT_LAYER - 1] * DATASET_SIZE,
-                           readCSV) ||
-        !INIT_ARR(output_data, float, LAYER_COMPOSITION[TOT_LAYER - 1] * DATASET_SIZE)
-    ) {
-        FREE_ALL_RESOURCES(LAYER_COMPOSITION, ACTIVATION_FUNCTION, weights_data, input_data, target_data, output_data);
-        return EXIT_FAILURE;
+    if (!build_model(&ctx, &model)) {
+        SAFE_EXIT_FAILURE;
     }
 
-    test_input = input_data + DATASET_TRAINING;
-    test_target = target_data + DATASET_TRAINING;
-    test_output = output_data + DATASET_TRAINING;
+    uint16_t input_shape_training[] = {ctx.sample_train, ctx.input_shape[0], ctx.input_shape[1], ctx.input_shape[2]};
+    uint16_t output_shape_training[] = {ctx.sample_train, ctx.layers[ctx.num_layer - 1].params[NEURONS][0]};
 
-    LOG_INFO("Neural Network Configuration:");
-    LOG_INFO("- Input Neurons: %d", LAYER_COMPOSITION[0]);
-    LOG_INFO("- Output Neurons: %d", LAYER_COMPOSITION[TOT_LAYER - 1]);
-    LOG_INFO("- Total Layers: %d", TOT_LAYER);
-    LOG_INFO("- Batch Size: %d", BATCH_SIZE);
-    LOG_INFO("- Epochs: %d", EPOCH);
-    LOG_INFO("- Log every: %d epochs", LOG_LOSS);
+    uint16_t input_shape_test[] = {ctx.sample_test, ctx.input_shape[0], ctx.input_shape[1], ctx.input_shape[2]};
+    uint16_t output_shape_test[] = {ctx.sample_test, ctx.layers[ctx.num_layer - 1].params[NEURONS][0]};
 
-    runTraining(LAYER_COMPOSITION, ACTIVATION_FUNCTION, TOT_LAYER, DATASET_TRAINING, BATCH_SIZE, EPOCH, LOG_LOSS,
-                weights_data, input_data, target_data, output_data, weights_filename);
+    aitensor_t x_train = AITENSOR_4D_F32(input_shape_training, d.x_train);
+    aitensor_t y_train = AITENSOR_2D_F32(output_shape_training, d.y_train);
+    aitensor_t x_test = AITENSOR_4D_F32(input_shape_test, d.x_test);
+    aitensor_t y_test = AITENSOR_2D_F32(output_shape_test, d.y_test);
 
-    runInference(LAYER_COMPOSITION, ACTIVATION_FUNCTION, TOT_LAYER, DATASET_TESTING, weights_data, test_input,
-                 test_target, test_output);
+    aialgo_compile_model(&model);
+    uint32_t parameter_memory_size = aialgo_sizeof_parameter_memory(&model);
 
-    FREE_ALL_RESOURCES(LAYER_COMPOSITION, ACTIVATION_FUNCTION, weights_data, input_data, target_data, output_data);
-    LOG_INFO("Resources freed. Exiting :)");
-    return EXIT_SUCCESS;
+    void *parameter_memory = mem_calloc(parameter_memory_size, sizeof(void));
+
+    aialgo_distribute_parameter_memory(&model, parameter_memory, parameter_memory_size);
+
+    ailoss_crossentropy_f32_t crossentropy_loss;
+    model.loss = ailoss_crossentropy_f32_default(&crossentropy_loss, model.output_layer);
+
+    aiopti_adam_f32_t adam_opti = {
+        .learning_rate = 0.01f,
+        .beta1 = 0.9f,
+        .beta2 = 0.999f,
+        .eps = 1e-7f
+    };
+
+    aialgo_initialize_parameters_model(&model);
+
+    aiopti_t *optimizer;
+    optimizer = aiopti_adam_f32_default(&adam_opti);
+
+    uint32_t memory_size = aialgo_sizeof_training_memory(&model, optimizer);
+
+    void *memory_ptr = mem_calloc(memory_size, sizeof(void));
+
+    aialgo_schedule_training_memory(&model, optimizer, memory_ptr, memory_size);
+
+    aialgo_init_model_for_training(&model, optimizer);
+
+    aiprint("\n-------------- Model structure ---------------\n");
+    aialgo_print_model_structure(&model);
+    aiprint("----------------------------------------------\n\n");
+
+    // float loss, acc;
+    // for (int i = 0; i < ctx.epochs; i++) {
+    //     LOG_INFO("Epoc: %d", i);
+    //     aialgo_train_model(&model, &x_train, &y_train, optimizer, ctx.batch_size);
+    //     aialgo_calc_loss_acc_model_f32(&model, &x_test, &y_test, &loss, &acc);
+    //     LOG_INFO("Test loss: %f\nTest acc:%f", loss, acc);
+    //
+    //     // aialgo_calc_loss_model_f32(&model, &x_test, &y_test, &loss); //original
+    //     // if (loss < 5) break;
+    // }
+
+    LOG_INFO("Freed %llu byte", mem_total());
+    SAFE_EXIT_SUCCESS;
 }
+
+bool build_model(aiconfiguration_t *ctx, aimodel_t *model) {
+    ailayer_t *layers = model->input_layer;
+
+    for (uint32_t i = 0; i < ctx->num_layer; i++) {
+        aiconfigurationlayer_t current = ctx->layers[i];
+        switch (current.type) {
+            case DENSE: {
+                ailayer_dense_f32_t *l = mem_calloc(1, sizeof(ailayer_dense_f32_t));
+
+                l->neurons = current.params[NEURONS][0];
+                layers = ailayer_dense_f32_default(l, layers);
+            }
+            break;
+            case CONV2D: {
+                ailayer_conv2d_f32_t *l = mem_calloc(1, sizeof(ailayer_conv2d_f32_t));
+
+                l->channel_axis = current.params[CHANNEL_AXIS][0];
+                l->filter_count = current.params[FILTERS][0];
+
+                l->kernel_size[0] = current.params[PARAM_KERNEL_SIZE][0];
+                l->kernel_size[1] = current.params[PARAM_KERNEL_SIZE][1];
+
+                l->stride[0] = current.params[PARAM_KERNEL_STRIDE][0];
+                l->stride[1] = current.params[PARAM_KERNEL_STRIDE][1];
+
+                l->dilation[0] = current.params[PARAM_KERNEL_DILATION][0];
+                l->dilation[1] = current.params[PARAM_KERNEL_DILATION][1];
+
+                l->padding[0] = current.params[PARAM_KERNEL_PADDING][0];
+                l->padding[1] = current.params[PARAM_KERNEL_PADDING][1];
+
+                layers = ailayer_conv2d_f32_default(l, layers);
+            }
+            break;
+            case MAXPOOL2D: {
+                ailayer_maxpool2d_f32_t *l = mem_calloc(1, sizeof(ailayer_maxpool2d_f32_t));
+
+                l->channel_axis = current.params[CHANNEL_AXIS][0];
+                l->pool_size[0] = current.params[PARAM_POOL_SIZE][0];
+                l->pool_size[1] = current.params[PARAM_POOL_SIZE][1];
+                l->stride[0] = current.params[PARAM_KERNEL_STRIDE][0];
+                l->stride[1] = current.params[PARAM_KERNEL_STRIDE][1];
+                l->padding[0] = current.params[PARAM_KERNEL_PADDING][0];
+                l->padding[1] = current.params[PARAM_KERNEL_PADDING][1];
+                layers = ailayer_maxpool2d_f32_default(l, layers);
+            }
+            break;
+            case FLATTEN: {
+                ailayer_flatten_f32_t *l = mem_calloc(1, sizeof(ailayer_flatten_f32_t));
+                layers = ailayer_flatten_f32_default(l, layers);
+            }
+            break;
+            default: {
+                LOG_ERROR("Non implemented layer! layer: %s", layer_type_to_string(current.type));
+                return false;
+            }
+        }
+
+        if (current.type == MAXPOOL2D || current.type == FLATTEN) {
+            continue;
+        }
+
+        switch (current.activation) {
+            case RELU: {
+                ailayer_relu_f32_t *l = mem_calloc(1, sizeof(ailayer_relu_f32_t));
+                layers = ailayer_relu_f32_default(l, layers);
+            }
+            break;
+            case SIGMOID: {
+                ailayer_sigmoid_f32_t *l = mem_calloc(1, sizeof(ailayer_sigmoid_f32_t));
+                layers = ailayer_sigmoid_f32_default(l, layers);
+            }
+            break;
+            case SOFTMAX: {
+                ailayer_softmax_f32_t *l = mem_calloc(1, sizeof(ailayer_softmax_f32_t));
+                layers = ailayer_softmax_f32_default(l, layers);
+            }
+            break;
+            default: {
+                LOG_ERROR("Non implemented layer! fun: %s", activation_to_string(current.activation));
+                return false;
+            }
+        }
+    }
+
+    model->output_layer = layers;
+    return true;
+}
+
+
+/*
+ailoss_mse_t mse_loss; //Loss: mean squared error
+    ailoss_crossentropy_t crossentropy_loss; //Loss: crossentropy
+
+    switch(AIFES_E_fnn_training->loss){
+        case AIfES_E_mse:
+            model.loss = ailoss_mse_f32_default(&mse_loss, model.output_layer);
+            break;
+        case AIfES_E_crossentropy:
+            model.loss = ailoss_crossentropy_f32_default(&crossentropy_loss, model.output_layer);
+            break;
+        default :
+            //printf("ERROR! Unknown loss function\n" );
+            return(-10);
+    }
+
+
+aiopti_t *optimizer; // Object for the optimizer
+    aiopti_adam_f32_t adam_opti;
+    aiopti_sgd_f32_t sgd_opti;
+
+    switch(AIFES_E_fnn_training->optimizer){
+        case AIfES_E_adam:
+            adam_opti.learning_rate = AIFES_E_fnn_training->learn_rate;
+            adam_opti.beta1 = 0.9f;
+            adam_opti.beta2 = 0.999f;
+            adam_opti.eps = 1e-7;
+            optimizer = aiopti_adam_f32_default(&adam_opti);
+            break;
+        case AIfES_E_sgd:
+            sgd_opti.learning_rate = AIFES_E_fnn_training->learn_rate;
+            sgd_opti.momentum = AIFES_E_fnn_training->sgd_momentum;
+            optimizer = aiopti_sgd_f32_default(&sgd_opti);
+            break;
+        default :
+            //printf("ERROR! Unknown optimizer\n" );
+            return(-12);
+    }
+
+aialgo_train_model(&model, input_tensor, target_tensor, optimizer, AIFES_E_fnn_training->batch_size);
+
+case AIfES_E_crossentropy:
+                // loss = loss / NUMBER_DATASETS
+                loss = loss / input_tensor->shape[0];
+                (*AIFES_E_fnn_training->loss_print_function)(loss);
+
+                if(AIFES_E_fnn_training->early_stopping == AIfES_E_early_stopping_on)
+                {
+                    if(loss <= AIFES_E_fnn_training->early_stopping_target_loss)
+                    {
+                            free(memory_ptr);
+                            return(0);
+                    }
+                }
+                break;
+ */
