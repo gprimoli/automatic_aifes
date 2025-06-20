@@ -34,4 +34,7 @@ add_library(Lib STATIC ${LIB_SRC})
 
 add_executable(automatic_aifes ${MAIN_FILE})
 
-target_link_libraries(automatic_aifes AIfES Lib INI m)
+target_link_libraries(automatic_aifes
+        "-Wl,--whole-archive" AIfES "-Wl,--no-whole-archive"
+        Lib INI m
+)
