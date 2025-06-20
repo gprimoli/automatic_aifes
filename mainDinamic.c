@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (ctx.training) {
-        run_training_loop(&ctx, &model, optimizer, x_train, y_train, x_test, y_test);
+        run_training(&ctx, &model, optimizer, x_train, y_train, x_test, y_test);
     } else {
         run_evaluation(&ctx, &model, x_test, y_test);
     }

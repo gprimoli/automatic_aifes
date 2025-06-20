@@ -444,7 +444,7 @@ void load_model(const aimodel_t *model, FILE *f) {
     }
 }
 
-void run_training_loop(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
+void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
                        FILE *x_train, FILE *y_train, FILE *x_test, FILE *y_test) {
     uint32_t input_elements = (ctx->input_shape[2] == 0 && ctx->input_shape[3] == 0)
                                   ? ctx->batch_size * ctx->input_shape[1]
