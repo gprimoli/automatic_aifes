@@ -71,8 +71,15 @@ bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *ctx, aimodel_t *model, fl
         aitensor_t *result_tensor = aialgo_forward_model(model, &input_batch);
         model->loss->calc_loss(model->loss, &target_batch, &loss);
 
-        int pred_label = argmax(result_tensor);
-        int true_label = argmax(&target_batch);
+
+        int pred_label, true_label;
+        if (ctx->loss == CROSSENTROPY) {
+            pred_label = argmax(result_tensor);
+            true_label = argmax(&target_batch);
+        } else {
+            pred_label = ((float *) result_tensor->data)[0] > 0.5 ? 1 : 0;
+            true_label = ((float *) target_batch.data)[0] == 1.f ? 1 : 0;
+        }
 
         if (pred_label == true_label) {
             correct++;
