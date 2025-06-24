@@ -20,12 +20,16 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # Copia il package.json e package-lock.json nella directory di lavoro
 COPY package*.json ./
 
-# Copia il resto dei file del progetto nella directory di lavoro
-COPY . .
 
 # Attivare l'ambiente virtuale e installare le dipendenze Python
 RUN /app/venv/bin/pip install --upgrade pip
-RUN /app/venv/bin/pip install scikit-learn pandas argparse && python setup.py
+RUN /app/venv/bin/pip install scikit-learn pandas argparse 
+
+
+# Copia il resto dei file del progetto nella directory di lavoro
+COPY . .
+
+RUN python setup.py
 
 # Installa le dipendenze del progetto
 RUN npm install

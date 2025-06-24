@@ -26,8 +26,8 @@ def split_and_save_csv(X, y, n_parts, prefix):
         end_idx = start_idx + chunk_size
         X_chunk = X.iloc[start_idx:end_idx]
         y_chunk = y.iloc[start_idx:end_idx]
-        X_chunk.to_csv(f'dataset/{ip_nodes[i]}/{prefix}_x_train.csv', index=False, header=False)
-        y_chunk.to_csv(f'dataset/{ip_nodes[i]}/{prefix}_y_train.csv', index=False, header=False)
+        X_chunk.to_csv(f'dataset/{ip_nodes[i]}/x_{prefix}.csv', index=False, header=False)
+        y_chunk.to_csv(f'dataset/{ip_nodes[i]}/y_{prefix}.csv', index=False, header=False)
         print(f"Part {i+1} saved as {prefix}_{ip_nodes[i]}_training.csv")
         
         start_idx = end_idx
@@ -103,5 +103,5 @@ X_test_sample.to_csv("dataset/X_test.csv", index=False, header=False)
 y_train_sample.to_csv("dataset/y_train.csv", index=False, header=False)
 y_test_sample.to_csv("dataset/y_test.csv", index=False, header=False)
 
-split_and_save_csv(X_train_sample, y_train_sample, n_nodes, prefix='partition')
-split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='partition_test')
+split_and_save_csv(X_train_sample, y_train_sample, n_nodes, prefix='train')
+split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='test')
