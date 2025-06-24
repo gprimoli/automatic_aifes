@@ -1,10 +1,10 @@
-#include "MemManager.h"
-#include "Log.h"
+#include "memmanager.h"
+#include "log.h"
 #include <stdlib.h>
 
 /*-------------------------------------------------------------*/
-#include <stdarg.h>
 #include <stdint.h>
+#include <string.h>
 
 #define FREE(x) safe_free((void**)&(x))
 #define FREE_ALL_1(x) FREE(x)
@@ -20,10 +20,14 @@
 #define FREE_ALL_RESOURCES(...) \
 GET_MACRO(__VA_ARGS__, FREE_ALL_8, FREE_ALL_7, FREE_ALL_6, FREE_ALL_5, FREE_ALL_4, FREE_ALL_3, FREE_ALL_2, FREE_ALL_1)(__VA_ARGS__)
 
-void safe_free(void **ptr) ;
-void free_all_resources(uint32_t count, ...) ;
-void free_array(void **array, uint32_t count) ;
+void safe_free(void **ptr);
+
+void free_all_resources(uint32_t count, ...);
+
+void free_array(void **array, uint32_t count);
+
 void mem_register(void *ptr, size_t size);
+
 /*-------------------------------------------------------------*/
 
 typedef struct MemNode {
@@ -60,19 +64,56 @@ size_t mem_total() {
     return total;
 }
 
+void mem_dealloc(void *ptr) {
+    if (!ptr || !head)
+        return;
+
+    MemNode *current = head;
+    MemNode *previous = NULL;
+
+    while (current) {
+        if (current->ptr == ptr) {
+            if (previous) {
+                previous->next = current->next;
+            } else {
+                head = current->next;
+            }
+            FREE_ALL_RESOURCES(current->ptr, current);
+            return;
+        }
+        previous = current;
+        current = current->next;
+    }
+}
+
+void safe_exit_failure(char *msg) {
+    mem_free();
+    if (strlen(msg) > 0) {
+        LOG_ERROR("%s", msg);
+    }
+    exit(EXIT_FAILURE);
+}
+
+void safe_exit_success(char *msg) {
+    mem_free();
+    if (strlen(msg) > 0) {
+        LOG_INFO("%s", msg);
+    }
+    exit(EXIT_SUCCESS);
+}
 
 /*-------------------------------------------------------------*/
 void mem_register(void *ptr, const size_t size) {
     if (!ptr) return;
     MemNode *node = calloc(sizeof(MemNode), 1);
     if (!node) {
-        LOG_ERROR("Failed to allocate memory for memory node");
-        SAFE_EXIT_FAILURE;
+        SAFE_EXIT_FAILURE("Failed to allocate memory for memory node");
+    } else {
+        node->ptr = ptr;
+        node->size = size;
+        node->next = head;
+        head = node;
     }
-    node->ptr = ptr;
-    node->size = size;
-    node->next = head;
-    head = node;
 }
 
 void safe_free(void **ptr) {
@@ -81,4 +122,5 @@ void safe_free(void **ptr) {
         *ptr = NULL;
     }
 }
+
 /*-------------------------------------------------------------*/

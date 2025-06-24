@@ -1,9 +1,0 @@
-#ifndef AIMODELBUILDER_H
-#define AIMODELBUILDER_H
-
-#include <stdbool.h>
-#include "aifes.h"
-#include "aiconfiguration.h"
-
-
-#endif //AIMODELBUILDER_H
