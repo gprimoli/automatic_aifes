@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
     }
 
     LOG_INFO("Batch size: %d", ctx.batch_size);
-    LOG_INFO("Pruning: %d%%", ctx.pruning);
+    LOG_INFO("Pruning: %f%%", ctx.pruning);
     LOG_INFO("Memoria allocata: %llu byte", mem_total());
 
     CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, save, load, log_file); //TODO: log_file è extern ... meh
