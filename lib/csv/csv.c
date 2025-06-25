@@ -61,7 +61,6 @@ bool csv_write(const float arr[], uint32_t len, FILE *f) {
         }
     }
 
-    fclose(f);
     return true;
 }
 

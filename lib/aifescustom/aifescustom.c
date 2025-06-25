@@ -271,9 +271,9 @@ void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
     uint32_t output_elements = ctx->batch_size * ctx->layers[ctx->num_layer - 1].params.dense.neurons;
 
     uint32_t batch_train = ctx->sample_train / ctx->batch_size;
-    uint32_t batch_test = ctx->sample_test / ctx->batch_size;
 
     for (int epoch = 0; epoch < ctx->epochs; epoch++) {
+        LOG_INFO("Epoch %d/%d", epoch + 1, ctx->epochs);
         LOG_INFO("Inizio Training\t%s", get_timestamp());
         for (int batch = 0; batch < batch_train; batch++) {
             if (!csv_read(ctx->x->data, input_elements, x_train) ||
@@ -284,7 +284,6 @@ void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
             aialgo_train_model(model, ctx->x, ctx->y, optimizer, ctx->batch_size);
         }
         LOG_INFO("Fine Training\t%s\n", get_timestamp());
-
 
         if (ctx->pruning > 0) {
             const uint8_t pruning_steps = 5;
@@ -302,20 +301,9 @@ void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
             }
         }
 
+        run_evaluation(ctx, model, x_test, y_test);
 
-        LOG_INFO("Inizio Testing\t%s", get_timestamp());
-        float loss, acc;
-        for (int batch = 0; batch < batch_test; batch++) {
-            if (!csv_read(ctx->x->data, input_elements, x_test) ||
-                !csv_read(ctx->y->data, output_elements, y_test)) {
-                SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
-            }
-
-            aialgo_calc_loss_acc_model_f32(ctx, model, &loss, &acc);
-        }
-        LOG_INFO("Fine Testing\t%s\n", get_timestamp());
-        LOG_INFO("Epoch %d/%d | Loss: %.7f\tAccuracy: %.5f", epoch + 1, ctx->epochs, loss, acc);
-        RESET_ALL_FILES(x_train, y_train, x_test, y_test);
+        RESET_ALL_FILES(x_train, y_train);
     }
 
     if (ctx->pruning > 0) {
@@ -346,7 +334,7 @@ void run_evaluation(aiconfiguration_t *ctx, aimodel_t *model, FILE *x_test, FILE
     }
     LOG_INFO("Fine Testing\t%s\n", get_timestamp());
 
-    LOG_INFO("Loss: %.7f\tAccuracy: %.2f\n", loss, acc);
+    LOG_INFO("Loss: %.5f\tAccuracy: %.5f\n", loss, acc);
     RESET_ALL_FILES(x_test, y_test);
 }
 
