@@ -81,6 +81,7 @@ typedef struct aiconfiguration {
     bool training;
     char *load;
     char *save;
+    float pruning;
 
     Loss loss;
     Optimizer optimizer;
@@ -105,11 +106,6 @@ bool load_config(const char *filename, aiconfiguration_t *ctx);
 
 /*
 // TODO implement;
-
-
-
-
-
 const char *optimizer_to_string(Optimizer opt);
 const char *loss_to_string(Loss opt);
 const char *layer_type_to_string(Layer_type type);

@@ -9,4 +9,9 @@
 
 #define BUF_MIN 128
 
+#include <unistd.h>
+#include <sys/time.h>
+
+unsigned int get_seed();
+
 #endif //MAIN_H
