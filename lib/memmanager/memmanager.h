@@ -8,10 +8,10 @@ void mem_free();
 size_t mem_total();
 void mem_dealloc(void *ptr);
 
-void safe_exit_failure(char *msg);
-void safe_exit_success(char *msg);
+void safe_exit_failure(char *msg, ...);
+void safe_exit_success(char *msg, ...);
 
-#define SAFE_EXIT_FAILURE(msg) safe_exit_failure(msg);
-#define SAFE_EXIT_SUCCESS(msg) safe_exit_success(msg);
+#define SAFE_EXIT_FAILURE(msg, ...) safe_exit_failure(msg, ##__VA_ARGS__);
+#define SAFE_EXIT_SUCCESS(msg, ...) safe_exit_success(msg, ##__VA_ARGS__);
 
 #endif //MEMMANAGER_H

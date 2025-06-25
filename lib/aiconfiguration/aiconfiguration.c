@@ -54,6 +54,8 @@ int handler(void *data, const char *section, const char *name, const char *value
             ctx->load = strdup(value);
         } else if (strcmp_ignorecase(name, "save") == 0) {
             ctx->save = strdup(value);
+        } else if (strcmp_ignorecase(name, "pruning") == 0) {
+            ctx->pruning = atof(value);
         } else {
             return 0;
         }

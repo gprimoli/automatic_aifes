@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 /*-------------------------------------------------------------*/
+#include <stdarg.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -86,18 +87,30 @@ void mem_dealloc(void *ptr) {
     }
 }
 
-void safe_exit_failure(char *msg) {
+void safe_exit_failure(char *msg, ...) {
     mem_free();
-    if (strlen(msg) > 0) {
-        LOG_ERROR("%s", msg);
+    if (msg && strlen(msg) > 0) {
+        char formatted[128];
+        va_list args;
+        va_start(args, msg);
+        vsnprintf(formatted, sizeof(formatted), msg, args);
+        va_end(args);
+
+        LOG_ERROR("%s", formatted);
     }
     exit(EXIT_FAILURE);
 }
 
-void safe_exit_success(char *msg) {
+void safe_exit_success(char *msg, ...) {
     mem_free();
-    if (strlen(msg) > 0) {
-        LOG_INFO("%s", msg);
+    if (msg && strlen(msg) > 0) {
+        char formatted[128];
+        va_list args;
+        va_start(args, msg);
+        vsnprintf(formatted, sizeof(formatted), msg, args);
+        va_end(args);
+
+        LOG_INFO("%s", formatted);
     }
     exit(EXIT_SUCCESS);
 }

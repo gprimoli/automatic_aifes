@@ -3,15 +3,15 @@
 
 #include "log.h"
 #include "csv.h"
-#include "aifes.h"
+#include "main.h"
 #include "memmanager.h"
 #include "aifescustom.h"
 #include "aiconfiguration.h"
 
-
 int main(int argc, char *argv[]) {
-    unsigned int seed = (unsigned int) time(NULL) ^ (uintptr_t) &seed;
+    unsigned int seed = get_seed();
     srand(seed);
+    LOG_INFO("Seed: %u", seed);
 
     FILE *x_train = NULL, *y_train = NULL, *x_test = NULL, *y_test = NULL;
     FILE *save = NULL, *load = NULL;
@@ -27,6 +27,7 @@ int main(int argc, char *argv[]) {
         SAFE_EXIT_FAILURE("Errore file configurazione");
     }
 
+    initLogFile(ctx.basedir);
     aiopti_t *optimizer = build_model(&ctx, &model);
     if (!optimizer) {
         SAFE_EXIT_FAILURE("Errore costruzione modello");
@@ -59,7 +60,22 @@ int main(int argc, char *argv[]) {
         save_model(&model, save);
     }
 
-    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, save, load);
-    LOG_INFO("Freed %llu byte", mem_total());
-    SAFE_EXIT_SUCCESS("");
+    LOG_INFO("\nBatch size: %d", ctx.batch_size);
+    LOG_INFO("Pruning: %d%%", ctx.pruning);
+    LOG_INFO("Memoria allocata: %llu byte", mem_total());
+
+    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, save, load, log_file); //TODO: log_file è extern ... meh
+    SAFE_EXIT_SUCCESS("Finish: ALL RIGHT");
+}
+
+
+unsigned int get_seed() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    pid_t pid = getpid();
+
+    unsigned int entropy = (unsigned int) (tv.tv_sec ^ tv.tv_usec ^ pid ^ (uintptr_t) &tv);
+
+    return entropy;
 }

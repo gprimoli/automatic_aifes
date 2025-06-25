@@ -4,6 +4,8 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
+#include "log.h"
+
 bool open_csv(FILE **file, const char *base, const char *name, const char *mode) {
     char path[BUF_MIN];
     snprintf(path, sizeof(path), "%s%c%s", base, DIR_SEPARATOR, name);
@@ -73,6 +75,8 @@ void close_all_files(uint32_t count, ...) {
     }
 
     va_end(args);
+
+    closeLogFile();
 }
 
 void reset_files(int count, ...) {
