@@ -74,8 +74,6 @@ void close_all_files(uint32_t count, ...) {
     }
 
     va_end(args);
-
-    closeLogFile();
 }
 
 void reset_files(int count, ...) {

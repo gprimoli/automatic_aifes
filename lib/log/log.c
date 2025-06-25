@@ -20,13 +20,13 @@ void initLogFile(const char *path) {
 }
 
 void closeLogFile(void) {
-    if (log_file) {
+    if (log_file != NULL) {
         fclose(log_file);
         log_file = NULL;
     }
 }
 
-const char* get_timestamp(void) {
+const char *get_timestamp(void) {
     static char buf[32];
     time_t now = time(NULL);
     struct tm *t = localtime(&now);

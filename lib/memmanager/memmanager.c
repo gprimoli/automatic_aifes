@@ -51,6 +51,7 @@ void mem_free() {
         MemNode *next = current->next;
         FREE_ALL_RESOURCES(current->ptr, current);
         current = next;
+        next = NULL;
     }
     head = NULL;
 }
