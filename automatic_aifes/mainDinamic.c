@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
         save_model(&model, save);
     }
 
-    LOG_INFO("\nBatch size: %d", ctx.batch_size);
+    LOG_INFO("Batch size: %d", ctx.batch_size);
     LOG_INFO("Pruning: %d%%", ctx.pruning);
     LOG_INFO("Memoria allocata: %llu byte", mem_total());
 
