@@ -234,7 +234,7 @@ void save_model(const aimodel_t *model, FILE *f) {
     for (int i = 1; i < model->layer_count; i++) {
         layer = layer->output_layer;
 
-        if (strcmp(layer->layer_type->name, "Conv2d") == 0) {
+        if (strcmp(layer->layer_type->name, "Conv2D") == 0) {
             ailayer_conv2d_t *l = (ailayer_conv2d_t *) layer;
             write_aitensor_to_csv(&(l->weights), f);
             write_aitensor_to_csv(&(l->bias), f);
@@ -250,7 +250,7 @@ void load_model(const aimodel_t *model, FILE *f) {
     const ailayer_t *layer = model->input_layer;
     for (int i = 1; i < model->layer_count; i++) {
         layer = layer->output_layer;
-        if (strcmp(layer->layer_type->name, "Conv2d") == 0) {
+        if (strcmp(layer->layer_type->name, "Conv2D") == 0) {
             ailayer_conv2d_t *l = (ailayer_conv2d_t *) layer;
             read_aitensor_from_csv(&(l->weights), f);
             read_aitensor_from_csv(&(l->bias), f);
@@ -273,8 +273,8 @@ void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
     uint32_t batch_train = ctx->sample_train / ctx->batch_size;
 
     for (int epoch = 0; epoch < ctx->epochs; epoch++) {
-        LOG_INFO("Epoch %d/%d", epoch + 1, ctx->epochs);
         LOG_INFO("Inizio Training\t%s", get_timestamp());
+        LOG_INFO("Epoch %d/%d", epoch + 1, ctx->epochs);
         for (int batch = 0; batch < batch_train; batch++) {
             if (!csv_read(ctx->x->data, input_elements, x_train) ||
                 !csv_read(ctx->y->data, output_elements, y_train)) {
@@ -332,9 +332,9 @@ void run_evaluation(aiconfiguration_t *ctx, aimodel_t *model, FILE *x_test, FILE
         }
         aialgo_calc_loss_acc_model_f32(ctx, model, &loss, &acc);
     }
-    LOG_INFO("Fine Testing\t%s\n", get_timestamp());
 
-    LOG_INFO("Loss: %.5f\tAccuracy: %.5f\n", loss, acc);
+    LOG_INFO("Loss: %.5f\tAccuracy: %.5f", loss, acc);
+    LOG_INFO("Fine Testing\t%s\n", get_timestamp());
     RESET_ALL_FILES(x_test, y_test);
 }
 

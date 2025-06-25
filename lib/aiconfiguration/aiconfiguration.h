@@ -114,7 +114,7 @@ const char *activation_to_string(Activation_Fun act);
 const char *layer_type_to_string(Layer_type type) {
     switch (type) {
         case DENSE: return "dense";
-        case CONV2D: return "conv2d";
+        case CONV2D: return "Conv2D";
         case MAXPOOL2D: return "maxpool2d";
         case FLATTEN: return "flatten";
         default: return "unknown";
