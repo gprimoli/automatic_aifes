@@ -1,13 +1,14 @@
 #include "aifes.h"
 #include "aifescustom.h"
 
-#include <float.h>
 #include <string.h>
 
 #include "log.h"
 #include "csv.h"
-#include "main.h"
 #include "memmanager.h"
+
+FILE *x_train = NULL, *y_train = NULL, *x_test = NULL, *y_test = NULL;
+FILE *save = NULL, *load = NULL;
 
 /* ------------- Private ------------- */
 
@@ -262,8 +263,7 @@ void load_model(const aimodel_t *model, FILE *f) {
     }
 }
 
-void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
-                  FILE *x_train, FILE *y_train, FILE *x_test, FILE *y_test) {
+void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer) {
     uint32_t input_elements = (ctx->input_shape[2] == 0 && ctx->input_shape[3] == 0)
                                   ? ctx->batch_size * ctx->input_shape[1]
                                   : ctx->batch_size * ctx->input_shape[1] * ctx->input_shape[2] * ctx->input_shape
@@ -301,7 +301,7 @@ void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
             }
         }
 
-        run_evaluation(ctx, model, x_test, y_test);
+        run_evaluation(ctx, model);
 
         RESET_ALL_FILES(x_train, y_train);
     }
@@ -309,12 +309,12 @@ void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer,
     if (ctx->pruning > 0) {
         LOG_INFO("Inizio Pruning finale\t%s", get_timestamp());
         prune_global(model, ctx->pruning / 100.0f);
-        run_evaluation(ctx, model, x_test, y_test);
+        run_evaluation(ctx, model);
         LOG_INFO("Fine Pruning finale\t%s\n", get_timestamp());
     }
 }
 
-void run_evaluation(aiconfiguration_t *ctx, aimodel_t *model, FILE *x_test, FILE *y_test) {
+void run_evaluation(aiconfiguration_t *ctx, aimodel_t *model) {
     uint32_t input_elements = (ctx->input_shape[2] == 0 && ctx->input_shape[3] == 0)
                                   ? ctx->batch_size * ctx->input_shape[1]
                                   : ctx->batch_size * ctx->input_shape[1] * ctx->input_shape[2] * ctx->input_shape
@@ -325,12 +325,14 @@ void run_evaluation(aiconfiguration_t *ctx, aimodel_t *model, FILE *x_test, FILE
 
     LOG_INFO("Inizio Testing\t%s", get_timestamp());
     float loss, acc;
+    loss = acc = 0.0f;
     for (int batch = 0; batch < batch_test; batch++) {
         if (!csv_read(ctx->x->data, input_elements, x_test) ||
             !csv_read(ctx->y->data, output_elements, y_test)) {
             SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
         }
-        aialgo_calc_loss_acc_model_f32(ctx, model, &loss, &acc);
+        if (!aialgo_calc_loss_acc_model_f32(ctx, model, &loss, &acc))
+            SAFE_EXIT_FAILURE("Acc loss error");
     }
 
     LOG_INFO("Loss: %.5f\tAccuracy: %.5f", loss, acc);
@@ -481,13 +483,15 @@ void prune_global(aimodel_t *model, float prune_percentage) {
 
 bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *ctx, aimodel_t *model, float *loss_result,
                                     float *accuracy_result) {
+    float loss = 0.0f;
     const aitensor_t *input_tensor = ctx->x;
     const aitensor_t *target_tensor = ctx->y;
     const uint16_t batch_size = input_tensor->shape[0];
     const uint16_t batch_slice_size = model->input_layer->result.shape[0];
+    const uint32_t num_batches = batch_size / batch_slice_size;
 
-    uint32_t i;
-    float loss;
+    if (num_batches == 0) return false;
+
 
     aitensor_t input_batch;
     uint16_t input_batch_shape[input_tensor->dim];
@@ -503,14 +507,14 @@ bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *ctx, aimodel_t *model, fl
     target_batch.tensor_params = target_tensor->tensor_params;
 
     uint32_t input_multiplier = 1;
-    for (i = input_tensor->dim - 1; i > 0; i--) {
+    for (uint32_t i = input_tensor->dim - 1; i > 0; i--) {
         input_multiplier *= input_tensor->shape[i];
         input_batch_shape[i] = input_tensor->shape[i];
     }
     input_multiplier *= input_tensor->dtype->size;
     input_batch_shape[0] = batch_slice_size;
     uint32_t target_multiplier = 1;
-    for (i = target_tensor->dim - 1; i > 0; i--) {
+    for (uint32_t i = target_tensor->dim - 1; i > 0; i--) {
         target_multiplier *= target_tensor->shape[i];
         target_batch_shape[i] = target_tensor->shape[i];
     }
@@ -520,17 +524,14 @@ bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *ctx, aimodel_t *model, fl
     aialgo_set_training_mode_model(model, FALSE);
     aialgo_set_batch_mode_model(model, FALSE);
 
-    uint32_t num_batches = batch_size / batch_slice_size;
-    int correct = 0;
+    float tmp_loss = 0;
+    float tmp_acc = 0;
 
-    *loss_result = 0;
-    for (i = 0; i < num_batches; i++) {
+    for (uint32_t i = 0; i < num_batches; i++) {
         input_batch.data = input_tensor->data + i * batch_slice_size * input_multiplier;
         target_batch.data = target_tensor->data + i * batch_slice_size * target_multiplier;
 
         aitensor_t *result_tensor = aialgo_forward_model(model, &input_batch);
-        model->loss->calc_loss(model->loss, &target_batch, &loss);
-
 
         int pred_label, true_label;
         if (ctx->loss == CROSSENTROPY) {
@@ -542,14 +543,21 @@ bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *ctx, aimodel_t *model, fl
         }
 
         if (pred_label == true_label) {
-            correct++;
+            tmp_acc++;
         }
 
-        *loss_result += loss;
+        model->loss->calc_loss(model->loss, &target_batch, &loss);
+        tmp_loss += loss;
     }
-    *accuracy_result = (float) correct / (float) i;
-    *loss_result = (float) *loss_result / (float) num_batches;
-    return 0;
+
+    tmp_loss = tmp_loss / (float) num_batches;
+    tmp_acc = tmp_acc / (float) num_batches;
+
+    const float alpha = 0.1f; //Exponential Moving Average (EMA)
+    *loss_result = (*loss_result != 0) ? (alpha * tmp_loss + (1.0f - alpha) * (*loss_result)) : tmp_loss;
+    *accuracy_result = *accuracy_result != 0 ? (tmp_acc + *accuracy_result) / 2 : tmp_acc;
+
+    return true;
 }
 
 void custom_ailayer_dense_forward(ailayer_t *self) {

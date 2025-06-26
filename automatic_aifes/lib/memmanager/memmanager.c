@@ -7,6 +7,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "csv.h"
+#include "aifescustom.h"
+
 #define FREE(x) safe_free((void**)&(x))
 #define FREE_ALL_1(x) FREE(x)
 #define FREE_ALL_2(x, ...) FREE(x); FREE_ALL_1(__VA_ARGS__)
@@ -106,6 +109,7 @@ void safe_exit_failure(char *msg, ...) {
 
         LOG_ERROR("%s", formatted);
     }
+    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, save, load, log_file);
     exit(EXIT_FAILURE);
 }
 
@@ -120,6 +124,7 @@ void safe_exit_success(char *msg, ...) {
 
         LOG_INFO("%s", formatted);
     }
+    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, save, load, log_file);
     exit(EXIT_SUCCESS);
 }
 
