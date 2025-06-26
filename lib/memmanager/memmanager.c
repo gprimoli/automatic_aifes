@@ -49,7 +49,10 @@ void mem_free() {
     MemNode *current = head;
     while (current) {
         MemNode *next = current->next;
-        FREE_ALL_RESOURCES(current->ptr, current);
+        if (current->ptr) {
+            FREE_ALL_RESOURCES(current->ptr, current);
+            current->ptr = NULL;
+        }
         current = next;
         next = NULL;
     }
