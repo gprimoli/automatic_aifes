@@ -2,7 +2,7 @@
 #include <time.h>
 #include "memmanager.h"
 
-LogLevel CURRENT_LOG_LEVEL = LOG_VERBOSE;
+LogLevel CURRENT_LOG_LEVEL = LOG_VERBOSE_NO_FILE;
 FILE *log_file = NULL;
 
 void initLogFile(const char *path) {

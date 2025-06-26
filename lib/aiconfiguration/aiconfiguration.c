@@ -9,6 +9,8 @@
 
 #include <ctype.h>
 
+#include "aifescustom.h"
+#include "csv.h"
 #include "main.h"
 #include "memmanager.h"
 
@@ -48,6 +50,14 @@ int handler(void *data, const char *section, const char *name, const char *value
             if (ctx->sample_train == 0 || ctx->sample_test == 0) {
                 return 0;
             }
+
+            if (!open_csv(&x_train, ctx->basedir, "x_train.csv", "r")
+                || !open_csv(&y_train, ctx->basedir, "y_train.csv", "r")
+                || !open_csv(&x_test, ctx->basedir, "x_test.csv", "r")
+                || !open_csv(&y_test, ctx->basedir, "y_test.csv", "r")) {
+                SAFE_EXIT_FAILURE("Errore apertura file CSV");
+            }
+
         } else if (strcmp_ignorecase(name, "training") == 0) {
             ctx->training = atoi(value) != 0;
         } else if (strcmp_ignorecase(name, "load") == 0) {

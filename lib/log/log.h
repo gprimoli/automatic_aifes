@@ -8,6 +8,7 @@ typedef enum {
     LOG_FILE_ONLY,
     LOG_ERROR_ONLY,
     LOG_WARNINGS,
+    LOG_VERBOSE_NO_FILE,
     LOG_VERBOSE
 } LogLevel;
 

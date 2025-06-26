@@ -13,9 +13,6 @@ int main(int argc, char *argv[]) {
     srand(seed);
     LOG_INFO("Seed: %u", seed);
 
-    FILE *x_train = NULL, *y_train = NULL, *x_test = NULL, *y_test = NULL;
-    FILE *save = NULL, *load = NULL;
-
     aiconfiguration_t ctx = {0};
     aimodel_t model = {0};
 
@@ -37,22 +34,15 @@ int main(int argc, char *argv[]) {
     aialgo_print_model_structure(&model);
     aiprint("----------------------------------------------\n\n");
 
-    if (!open_csv(&x_train, ctx.basedir, "x_train.csv", "r")
-        || !open_csv(&y_train, ctx.basedir, "y_train.csv", "r")
-        || !open_csv(&x_test, ctx.basedir, "x_test.csv", "r")
-        || !open_csv(&y_test, ctx.basedir, "y_test.csv", "r")) {
-        SAFE_EXIT_FAILURE("Errore apertura file CSV");
-    }
-
     if (ctx.load) {
         open_csv(&load, ctx.basedir, ctx.load, "r");
         load_model(&model, load);
     }
 
     if (ctx.training) {
-        run_training(&ctx, &model, optimizer, x_train, y_train, x_test, y_test);
+        run_training(&ctx, &model, optimizer);
     } else {
-        run_evaluation(&ctx, &model, x_test, y_test);
+        run_evaluation(&ctx, &model);
     }
 
     if (ctx.save) {
@@ -65,7 +55,6 @@ int main(int argc, char *argv[]) {
     LOG_INFO("Memoria allocata: %llu byte", mem_total());
 
     SAFE_EXIT_SUCCESS("Finish: ALL RIGHT");
-    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, save, load, log_file); //TODO: log_file è extern ... meh
 }
 
 
