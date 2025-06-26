@@ -50,8 +50,10 @@ void mem_free() {
     while (current) {
         MemNode *next = current->next;
         if (current->ptr) {
-            FREE_ALL_RESOURCES(current->ptr, current);
-            current->ptr = NULL;
+            FREE(current->ptr);
+        }
+        if (current) {
+            FREE(current);
         }
         current = next;
         next = NULL;
@@ -83,7 +85,9 @@ void mem_dealloc(void *ptr) {
             } else {
                 head = current->next;
             }
-            FREE_ALL_RESOURCES(current->ptr, current);
+            if (current->ptr) {
+                FREE_ALL_RESOURCES(current->ptr, current);
+            }
             return;
         }
         previous = current;
