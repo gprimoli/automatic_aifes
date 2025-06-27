@@ -47,7 +47,7 @@ fflush(log_file); \
 
 // LOG_INFO
 #define LOG_INFO(fmt, ...)  do { \
-if (CURRENT_LOG_LEVEL >= LOG_VERBOSE) { \
+if (CURRENT_LOG_LEVEL >= LOG_VERBOSE_NO_FILE) { \
 fprintf(stdout, "[INFO] " fmt "\n", ##__VA_ARGS__); \
 fflush(stdout); \
 } \
