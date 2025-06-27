@@ -2,6 +2,7 @@
 #define LOG_H
 
 #include <stdio.h>
+#include <stdbool.h>
 
 typedef enum {
     LOG_NONE = 0,
@@ -15,7 +16,7 @@ typedef enum {
 extern LogLevel CURRENT_LOG_LEVEL;
 extern FILE *log_file;
 
-void initLogFile(const char *path);
+bool initLogFile(const char *path);
 
 void closeLogFile(void);
 

@@ -24,7 +24,6 @@ int main(int argc, char *argv[]) {
         SAFE_EXIT_FAILURE("Errore file configurazione");
     }
 
-    initLogFile(ctx.basedir);
     aiopti_t *optimizer = build_model(&ctx, &model);
     if (!optimizer) {
         SAFE_EXIT_FAILURE("Errore costruzione modello");

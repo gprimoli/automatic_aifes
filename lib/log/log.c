@@ -5,7 +5,7 @@
 LogLevel CURRENT_LOG_LEVEL = LOG_VERBOSE_NO_FILE;
 FILE *log_file = NULL;
 
-void initLogFile(const char *path) {
+bool initLogFile(const char *path) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     char filename[64];
@@ -15,8 +15,8 @@ void initLogFile(const char *path) {
     snprintf(fullpath, sizeof(fullpath), "%s/%s", path, filename);
 
     log_file = fopen(fullpath, "w");
-    if (!log_file)
-        SAFE_EXIT_FAILURE("Impossibile creare il file di log");
+    if (!log_file) return false;
+    return true;
 }
 
 void closeLogFile(void) {

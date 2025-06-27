@@ -54,7 +54,8 @@ int handler(void *data, const char *section, const char *name, const char *value
             if (!open_csv(&x_train, ctx->basedir, "x_train.csv", "r")
                 || !open_csv(&y_train, ctx->basedir, "y_train.csv", "r")
                 || !open_csv(&x_test, ctx->basedir, "x_test.csv", "r")
-                || !open_csv(&y_test, ctx->basedir, "y_test.csv", "r")) {
+                || !open_csv(&y_test, ctx->basedir, "y_test.csv", "r")
+                || !initLogFile(ctx->basedir)) {
                 SAFE_EXIT_FAILURE("Errore apertura file CSV");
             }
 
