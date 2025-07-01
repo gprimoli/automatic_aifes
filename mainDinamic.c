@@ -56,6 +56,7 @@ int main(int argc, char *argv[]) {
 
     LOG_INFO("Batch size: %d", conf->batch_size);
     LOG_INFO("Pruning: %f%%", conf->pruning);
+    LOG_INFO("Qauntizzation: %d", conf->quantization);
     LOG_INFO("Memoria allocata: %.4f KB", mem_total() / 1024.0);
 
     SAFE_EXIT_SUCCESS("Finish: ALL RIGHT");
