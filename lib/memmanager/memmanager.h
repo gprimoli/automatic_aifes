@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 void *mem_calloc(size_t count, size_t size);
+char *mem_strdup(const char *src);
 void mem_free();
 size_t mem_total();
 void mem_dealloc(void *ptr);

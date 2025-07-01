@@ -1,56 +1,55 @@
-#include "aifes.h"
-#include "aifescustom.h"
-
 #include <string.h>
 
 #include "log.h"
 #include "csv.h"
+#include "aifes.h"
 #include "memmanager.h"
+#include "aifescustom.h"
+#include "aifescustom_internal.h"
 
 FILE *x_train = NULL, *y_train = NULL, *x_test = NULL, *y_test = NULL;
-FILE *save = NULL, *load = NULL;
 
-/* ------------- Private ------------- */
-
-int argmax(aitensor_t *aitensor);
-
-bool write_aitensor_to_csv(aitensor_t *l, FILE *f);
-
-bool read_aitensor_from_csv(aitensor_t *l, FILE *f);
-
-void prune_global(aimodel_t *model, float prune_percentage);
-
-bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *ctx, aimodel_t *model, float *loss_result,
-                                    float *accuracy_result);
-
-/* ------------- End Private ------------- */
-
-
-aiopti_t *build_model(aiconfiguration_t *ctx, aimodel_t *model) {
+aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
     aiopti_t *optimizer = NULL;
 
     uint16_t *input_shape = mem_calloc(4, sizeof(uint16_t));
-    input_shape[0] = ctx->input_shape[0];
-    input_shape[1] = ctx->input_shape[1];
-    input_shape[2] = ctx->input_shape[2];
-    input_shape[3] = ctx->input_shape[3];
+    input_shape[0] = conf->input_shape[0];
+    input_shape[1] = conf->input_shape[1];
+    input_shape[2] = conf->input_shape[2];
+    input_shape[3] = conf->input_shape[3];
 
     ailayer_input_f32_t *input_layer = mem_calloc(1, sizeof(ailayer_input_f32_t));
-    input_layer->input_dim = ctx->input_shape[2] == 0 && ctx->input_shape[3] == 0 ? 2 : 4;
+    input_layer->input_dim = conf->input_shape[2] == 0 && conf->input_shape[3] == 0 ? 2 : 4;
     input_layer->input_shape = input_shape;
 
     model->input_layer = ailayer_input_f32_default(input_layer);
 
     ailayer_t *layers = model->input_layer;
 
-    for (uint32_t i = 0; i < ctx->num_layer; i++) {
-        aiconfigurationlayer_t current = ctx->layers[i];
+    for (uint32_t i = 0; i < conf->num_layer; i++) {
+        aiconfigurationlayer_t current = conf->layers[i];
         switch (current.type) {
             case DENSE: {
                 ailayer_dense_f32_t *l = mem_calloc(1, sizeof(ailayer_dense_f32_t));
 
                 l->neurons = current.params.dense.neurons;
                 layers = ailayer_dense_f32_default(l, layers);
+
+                switch (conf->quantization) {
+                    case Q31: {
+                        l->base.forward = ailayer_dense_forward_Q31;
+                        break;
+                    }
+                    case Q7: {
+                        l->base.forward = ailayer_dense_forward_Q7;
+                        break;
+                    }
+                    case Q1: {
+                        l->base.forward = ailayer_dense_forward_Q1;
+                        break;
+                    }
+                    default: ;
+                }
 
                 break;
             }
@@ -73,6 +72,23 @@ aiopti_t *build_model(aiconfiguration_t *ctx, aimodel_t *model) {
                 l->padding[1] = current.params.conv2d.padding[1];
 
                 layers = ailayer_conv2d_f32_default(l, layers);
+
+                switch (conf->quantization) {
+                    case Q31: {
+                        l->base.forward = ailayer_conv2d_forward_Q31;
+                        break;
+                    }
+                    case Q7: {
+                        l->base.forward = ailayer_conv2d_forward_Q7;
+                        break;
+                    }
+                    case Q1: {
+                        l->base.forward = ailayer_conv2d_forward_Q1;
+                        break;
+                    }
+                    default: ;
+                }
+
                 break;
             }
             case BATCH_NORM: {
@@ -162,32 +178,32 @@ aiopti_t *build_model(aiconfiguration_t *ctx, aimodel_t *model) {
 
     model->output_layer = layers;
 
-    uint32_t output_size = ctx->batch_size * ctx->layers[ctx->num_layer - 1].params.dense.neurons;
-    uint32_t input_size = ctx->input_shape[2] == 0 && ctx->input_shape[3] == 0
-                              ? ctx->batch_size * ctx->input_shape[1]
-                              : ctx->batch_size * ctx->input_shape[1] * ctx->input_shape[2] * ctx->input_shape[3];
+    uint32_t output_size = conf->batch_size * conf->layers[conf->num_layer - 1].params.dense.neurons;
+    uint32_t input_size = conf->input_shape[2] == 0 && conf->input_shape[3] == 0
+                              ? conf->batch_size * conf->input_shape[1]
+                              : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape[3];
 
     uint16_t *input_shape_training = mem_calloc(4, sizeof(uint16_t));
-    input_shape_training[0] = ctx->batch_size;
-    input_shape_training[1] = ctx->input_shape[1];
-    input_shape_training[2] = ctx->input_shape[2];
-    input_shape_training[3] = ctx->input_shape[3];
+    input_shape_training[0] = conf->batch_size;
+    input_shape_training[1] = conf->input_shape[1];
+    input_shape_training[2] = conf->input_shape[2];
+    input_shape_training[3] = conf->input_shape[3];
 
     uint16_t *output_shape_training = mem_calloc(2, sizeof(uint16_t));
-    output_shape_training[0] = ctx->batch_size;
-    output_shape_training[1] = ctx->layers[ctx->num_layer - 1].params.dense.neurons;
+    output_shape_training[0] = conf->batch_size;
+    output_shape_training[1] = conf->layers[conf->num_layer - 1].params.dense.neurons;
 
-    ctx->x = mem_calloc(1, sizeof(aitensor_t));
-    ctx->x->dtype = aif32;
-    ctx->x->dim = ctx->input_shape[2] == 0 && ctx->input_shape[3] == 0 ? 2 : 4;
-    ctx->x->shape = input_shape_training;
-    ctx->x->data = mem_calloc(input_size, sizeof(float));
+    conf->x = mem_calloc(1, sizeof(aitensor_t));
+    conf->x->dtype = aif32;
+    conf->x->dim = conf->input_shape[2] == 0 && conf->input_shape[3] == 0 ? 2 : 4;
+    conf->x->shape = input_shape_training;
+    conf->x->data = mem_calloc(input_size, sizeof(float));
 
-    ctx->y = mem_calloc(1, sizeof(aitensor_t));
-    ctx->y->dtype = aif32;
-    ctx->y->dim = 2;
-    ctx->y->shape = output_shape_training;
-    ctx->y->data = mem_calloc(output_size, sizeof(float));
+    conf->y = mem_calloc(1, sizeof(aitensor_t));
+    conf->y->dtype = aif32;
+    conf->y->dim = 2;
+    conf->y->shape = output_shape_training;
+    conf->y->data = mem_calloc(output_size, sizeof(float));
 
     aialgo_compile_model(model);
 
@@ -196,7 +212,7 @@ aiopti_t *build_model(aiconfiguration_t *ctx, aimodel_t *model) {
 
     aialgo_distribute_parameter_memory(model, parameter_memory, parameter_memory_size);
 
-    switch (ctx->loss) {
+    switch (conf->loss) {
         case MSE: {
             ailoss_mse_f32_t *loss = mem_calloc(1, sizeof(ailoss_mse_f32_t));
             model->loss = ailoss_mse_f32_default(loss, model->output_layer);
@@ -230,7 +246,10 @@ aiopti_t *build_model(aiconfiguration_t *ctx, aimodel_t *model) {
     return optimizer;
 }
 
-void save_model(const aimodel_t *model, FILE *f) {
+void save_model(aiconfiguration_t *conf, aimodel_t *model) {
+    FILE *f;
+    open_csv(&f, conf->basedir, conf->save, "w");
+
     const ailayer_t *layer = model->input_layer;
     for (int i = 1; i < model->layer_count; i++) {
         layer = layer->output_layer;
@@ -245,9 +264,14 @@ void save_model(const aimodel_t *model, FILE *f) {
             write_aitensor_to_csv(&(l->bias), f);
         }
     }
+
+    CLOSE_ALL_FILES(f);
 }
 
-void load_model(const aimodel_t *model, FILE *f) {
+void load_model(aiconfiguration_t *conf, aimodel_t *model) {
+    FILE *f;
+    open_csv(&f, conf->basedir, conf->load, "r");
+
     const ailayer_t *layer = model->input_layer;
     for (int i = 1; i < model->layer_count; i++) {
         layer = layer->output_layer;
@@ -261,39 +285,41 @@ void load_model(const aimodel_t *model, FILE *f) {
             read_aitensor_from_csv(&(l->bias), f);
         }
     }
+
+    CLOSE_ALL_FILES(f);
 }
 
-void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer) {
-    uint32_t input_elements = (ctx->input_shape[2] == 0 && ctx->input_shape[3] == 0)
-                                  ? ctx->batch_size * ctx->input_shape[1]
-                                  : ctx->batch_size * ctx->input_shape[1] * ctx->input_shape[2] * ctx->input_shape
+void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer) {
+    uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
+                                  ? conf->batch_size * conf->input_shape[1]
+                                  : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape
                                     [3];
-    uint32_t output_elements = ctx->batch_size * ctx->layers[ctx->num_layer - 1].params.dense.neurons;
+    uint32_t output_elements = conf->batch_size * conf->layers[conf->num_layer - 1].params.dense.neurons;
 
-    uint32_t batch_train = ctx->sample_train / ctx->batch_size;
+    uint32_t batch_train = conf->sample_train / conf->batch_size;
 
-    for (int epoch = 0; epoch < ctx->epochs; epoch++) {
-        LOG_INFO("Inizio Training\t%s", get_timestamp());
-        LOG_INFO("Epoch %d/%d", epoch + 1, ctx->epochs);
+    for (int epoch = 0; epoch < conf->epochs; epoch++) {
+        LOG_INFO("Inizio Training");
+        LOG_INFO("Epoch %d/%d", epoch + 1, conf->epochs);
         for (int batch = 0; batch < batch_train; batch++) {
-            if (!csv_read(ctx->x->data, input_elements, x_train) ||
-                !csv_read(ctx->y->data, output_elements, y_train)) {
+            if (!csv_read(conf->x->data, input_elements, x_train) ||
+                !csv_read(conf->y->data, output_elements, y_train)) {
                 SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
             }
 
-            aialgo_train_model(model, ctx->x, ctx->y, optimizer, ctx->batch_size);
+            aialgo_train_model(model, conf->x, conf->y, optimizer, conf->batch_size);
         }
-        LOG_INFO("Fine Training\t%s\n", get_timestamp());
+        LOG_INFO("Fine Training\n");
 
-        if (ctx->pruning > 0) {
+        if (conf->pruning > 0) {
             const uint8_t pruning_steps = 5;
-            const uint32_t pruning_step_size = ctx->epochs / pruning_steps;
+            const uint32_t pruning_step_size = conf->epochs / pruning_steps;
 
             if (pruning_step_size > 0 && ((epoch + 1) % pruning_step_size == 0)) {
-                LOG_INFO("Inizio Pruning\t%s", get_timestamp());
+                LOG_INFO("Inizio Pruning");
 
                 const float step = (float) (epoch + 1) / (float) pruning_step_size;
-                const float prune_fraction = (ctx->pruning * step) / (100.0f * (float) pruning_steps);
+                const float prune_fraction = (conf->pruning * step) / (100.0f * (float) pruning_steps);
 
                 prune_global(model, prune_fraction);
 
@@ -301,341 +327,41 @@ void run_training(aiconfiguration_t *ctx, aimodel_t *model, aiopti_t *optimizer)
             }
         }
 
-        run_evaluation(ctx, model);
+        run_evaluation(conf, model);
 
         RESET_ALL_FILES(x_train, y_train);
     }
 
-    if (ctx->pruning > 0) {
-        LOG_INFO("Inizio Pruning finale\t%s", get_timestamp());
-        prune_global(model, ctx->pruning / 100.0f);
-        run_evaluation(ctx, model);
+    if (conf->pruning > 0) {
+        LOG_INFO("Inizio Pruning finale");
+        prune_global(model, conf->pruning / 100.0f);
+        run_evaluation(conf, model);
         LOG_INFO("Fine Pruning finale\t%s\n", get_timestamp());
     }
 }
 
-void run_evaluation(aiconfiguration_t *ctx, aimodel_t *model) {
-    uint32_t input_elements = (ctx->input_shape[2] == 0 && ctx->input_shape[3] == 0)
-                                  ? ctx->batch_size * ctx->input_shape[1]
-                                  : ctx->batch_size * ctx->input_shape[1] * ctx->input_shape[2] * ctx->input_shape
+void run_evaluation(aiconfiguration_t *conf, aimodel_t *model) {
+    uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
+                                  ? conf->batch_size * conf->input_shape[1]
+                                  : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape
                                     [3];
-    uint32_t output_elements = ctx->batch_size * ctx->layers[ctx->num_layer - 1].params.dense.neurons;
+    uint32_t output_elements = conf->batch_size * conf->layers[conf->num_layer - 1].params.dense.neurons;
 
-    uint32_t batch_test = ctx->sample_test / ctx->batch_size;
+    uint32_t batch_test = conf->sample_test / conf->batch_size;
 
-    LOG_INFO("Inizio Testing\t%s", get_timestamp());
+    LOG_INFO("Inizio Testing");
     float loss, acc;
     loss = acc = 0.0f;
     for (int batch = 0; batch < batch_test; batch++) {
-        if (!csv_read(ctx->x->data, input_elements, x_test) ||
-            !csv_read(ctx->y->data, output_elements, y_test)) {
+        if (!csv_read(conf->x->data, input_elements, x_test) ||
+            !csv_read(conf->y->data, output_elements, y_test)) {
             SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
         }
-        if (!aialgo_calc_loss_acc_model_f32(ctx, model, &loss, &acc))
+        if (!aialgo_calc_loss_acc_model_f32(conf, model, &loss, &acc))
             SAFE_EXIT_FAILURE("Acc loss error");
     }
 
     LOG_INFO("Loss: %.5f\tAccuracy: %.5f", loss, acc);
-    LOG_INFO("Fine Testing\t%s\n", get_timestamp());
+    LOG_INFO("Fine Testing\n");
     RESET_ALL_FILES(x_test, y_test);
 }
-
-
-/* ------------- Private ------------- */
-
-int argmax(aitensor_t *aitensor) {
-    const float *data = aitensor->data;
-    float max = data[0];
-    int ixd = 0;
-
-    for (int i = 1; i < aitensor->shape[1]; i++) {
-        if (data[i] > max) {
-            max = data[i];
-            ixd = i;
-        }
-    }
-    return ixd;
-}
-
-bool write_aitensor_to_csv(aitensor_t *l, FILE *f) {
-    if (!l || !f) return false;
-
-    int len = 0;
-    if (l->dim == 2) {
-        len = l->shape[0] * l->shape[1];
-    } else if (l->dim == 4) {
-        len = l->shape[0] * l->shape[1] *
-              l->shape[2] * l->shape[3];
-    }
-
-    return csv_write(l->data, len, f);
-}
-
-bool read_aitensor_from_csv(aitensor_t *l, FILE *f) {
-    if (!l || !f) return false;
-
-    int len = 0;
-    if (l->dim == 2) {
-        len = l->shape[0] * l->shape[1];
-    } else if (l->dim == 4) {
-        len = l->shape[0] * l->shape[1] *
-              l->shape[2] * l->shape[3];
-    }
-
-    return csv_read(l->data, len, f);
-}
-
-void prune_global(aimodel_t *model, float prune_percentage) {
-    unsigned int hist[256] = {0};
-    float min = 0, max = 0;
-    size_t total_weights = 0;
-
-    ailayer_t *layer = model->input_layer;
-    for (int i = 1; i < model->layer_count; i++) {
-        layer = layer->output_layer;
-
-        const aitensor_t *weights = NULL;
-        if (strcmp(layer->layer_type->name, "Dense") == 0) {
-            weights = &((ailayer_dense_f32_t *) layer)->weights;
-        } else if (strcmp(layer->layer_type->name, "Conv2D") == 0) {
-            weights = &((ailayer_conv2d_f32_t *) layer)->weights;
-        }
-
-        if (weights && weights->data) {
-            float *w = (float *) weights->data;
-            size_t N = aimath_tensor_elements(weights);
-
-            for (size_t y = 0; y < N; y++) {
-                float val = fabsf(w[y]);
-                if (val < min) min = val;
-                if (val > max) max = val;
-            }
-
-            total_weights += N;
-        }
-    }
-
-    if (min == max || total_weights == 0) {
-        SAFE_EXIT_FAILURE("Pruning non eseguito: tutti i pesi hanno lo stesso valore o sono assenti.");
-    }
-
-    layer = model->input_layer;
-    for (int i = 1; i < model->layer_count; i++) {
-        layer = layer->output_layer;
-
-        const aitensor_t *weights = NULL;
-        if (strcmp(layer->layer_type->name, "Dense") == 0) {
-            weights = &((ailayer_dense_f32_t *) layer)->weights;
-        } else if (strcmp(layer->layer_type->name, "Conv2D") == 0) {
-            weights = &((ailayer_conv2d_f32_t *) layer)->weights;
-        }
-
-        if (weights && weights->data) {
-            float *w = (float *) weights->data;
-            size_t N = aimath_tensor_elements(weights);
-
-            for (size_t y = 0; y < N; y++) {
-                float val = fabsf(w[y]);
-                int bin = (int) (((val - min) / (max - min)) * (256 - 1));
-                if (bin > 255) bin = 255;
-                hist[bin]++;
-            }
-        }
-    }
-
-
-    size_t target = (size_t) (prune_percentage * total_weights);
-    LOG_INFO("Pesi prunati %zu/%zu", target, total_weights);
-
-    size_t acc = 0;
-    int bin_cutoff = 0;
-
-    for (; bin_cutoff < 256; bin_cutoff++) {
-        acc += hist[bin_cutoff];
-        if (acc >= target) break;
-    }
-
-    float threshold = min + (max - min) * bin_cutoff / (256 - 1);
-
-    layer = model->input_layer;
-    for (int i = 1; i < model->layer_count; i++) {
-        layer = layer->output_layer;
-
-        aitensor_t *weights = NULL;
-        if (strcmp(layer->layer_type->name, "Dense") == 0) {
-            weights = &((ailayer_dense_f32_t *) layer)->weights;
-        } else if (strcmp(layer->layer_type->name, "Conv2D") == 0) {
-            weights = &((ailayer_conv2d_f32_t *) layer)->weights;
-        }
-
-        if (weights && weights->data) {
-            float *w = (float *) weights->data;
-            size_t N = aimath_tensor_elements(weights);
-
-            for (size_t y = 0; y < N; y++) {
-                if (fabsf(w[y]) < threshold) {
-                    w[y] = 0.0f;
-                }
-            }
-        }
-    }
-}
-
-bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *ctx, aimodel_t *model, float *loss_result,
-                                    float *accuracy_result) {
-    float loss = 0.0f;
-    const aitensor_t *input_tensor = ctx->x;
-    const aitensor_t *target_tensor = ctx->y;
-    const uint16_t batch_size = input_tensor->shape[0];
-    const uint16_t batch_slice_size = model->input_layer->result.shape[0];
-    const uint32_t num_batches = batch_size / batch_slice_size;
-
-    if (num_batches == 0) return false;
-
-
-    aitensor_t input_batch;
-    uint16_t input_batch_shape[input_tensor->dim];
-    input_batch.dtype = input_tensor->dtype;
-    input_batch.dim = input_tensor->dim;
-    input_batch.shape = input_batch_shape;
-    input_batch.tensor_params = input_tensor->tensor_params;
-    aitensor_t target_batch;
-    uint16_t target_batch_shape[target_tensor->dim];
-    target_batch.dtype = target_tensor->dtype;
-    target_batch.dim = target_tensor->dim;
-    target_batch.shape = target_batch_shape;
-    target_batch.tensor_params = target_tensor->tensor_params;
-
-    uint32_t input_multiplier = 1;
-    for (uint32_t i = input_tensor->dim - 1; i > 0; i--) {
-        input_multiplier *= input_tensor->shape[i];
-        input_batch_shape[i] = input_tensor->shape[i];
-    }
-    input_multiplier *= input_tensor->dtype->size;
-    input_batch_shape[0] = batch_slice_size;
-    uint32_t target_multiplier = 1;
-    for (uint32_t i = target_tensor->dim - 1; i > 0; i--) {
-        target_multiplier *= target_tensor->shape[i];
-        target_batch_shape[i] = target_tensor->shape[i];
-    }
-    target_multiplier *= target_tensor->dtype->size;
-    target_batch_shape[0] = batch_slice_size;
-
-    aialgo_set_training_mode_model(model, FALSE);
-    aialgo_set_batch_mode_model(model, FALSE);
-
-    float tmp_loss = 0;
-    float tmp_acc = 0;
-
-    for (uint32_t i = 0; i < num_batches; i++) {
-        input_batch.data = input_tensor->data + i * batch_slice_size * input_multiplier;
-        target_batch.data = target_tensor->data + i * batch_slice_size * target_multiplier;
-
-        aitensor_t *result_tensor = aialgo_forward_model(model, &input_batch);
-
-        int pred_label, true_label;
-        if (ctx->loss == CROSSENTROPY) {
-            pred_label = argmax(result_tensor);
-            true_label = argmax(&target_batch);
-        } else {
-            pred_label = ((float *) result_tensor->data)[0] > 0.5 ? 1 : 0;
-            true_label = ((float *) target_batch.data)[0] == 1.f ? 1 : 0;
-        }
-
-        if (pred_label == true_label) {
-            tmp_acc++;
-        }
-
-        model->loss->calc_loss(model->loss, &target_batch, &loss);
-        tmp_loss += loss;
-    }
-
-    tmp_loss = tmp_loss / (float) num_batches;
-    tmp_acc = tmp_acc / (float) num_batches;
-
-    const float alpha = 0.1f; //Exponential Moving Average (EMA)
-    *loss_result = (*loss_result != 0) ? (alpha * tmp_loss + (1.0f - alpha) * (*loss_result)) : tmp_loss;
-    *accuracy_result = *accuracy_result != 0 ? (tmp_acc + *accuracy_result) / 2 : tmp_acc;
-
-    return true;
-}
-
-void custom_ailayer_dense_forward(ailayer_t *self) {
-    aitensor_t *x_in = &(self->input_layer->result);
-    aitensor_t *x_out = &(self->result);
-    ailayer_dense_t *layer = (ailayer_dense_t *) (self->layer_configuration);
-    aitensor_t *weights = &(layer->weights);
-    aitensor_t *bias = &(layer->bias);
-
-    if (x_in->tensor_params == NULL) {
-    }
-
-    layer->linear(x_in, weights, bias, x_out);
-
-    // if (self->settings != 2) {
-    //     uint32_t x_in_size = aimath_tensor_elements(x_in);
-    //     uint32_t weights_size = aimath_tensor_elements(weights);
-    //
-    //     // --- Quantizzazione INPUT (affine) ---
-    //     aitensor_t *x_in_q = mem_calloc(1, sizeof(aitensor_t));
-    //     x_in_q->dim = x_in->dim;
-    //     x_in_q->shape = x_in->shape;
-    //     x_in_q->dtype = x_in->dtype;
-    //     x_in_q->data = mem_calloc(x_in_size, sizeof(float));
-    //
-    //     float input_min = FLT_MAX, input_max = -FLT_MAX;
-    //     for (int i = 0; i < x_in_size; i++) {
-    //         float val = ((float *) x_in->data)[i];
-    //         if (val > input_max) input_max = val;
-    //         if (val < input_min) input_min = val;
-    //     }
-    //
-    //     float input_scale = (input_max - input_min) / 255.0f;
-    //     if (input_scale == 0.0f) input_scale = 0.1f;
-    //
-    //     int32_t input_zero_point = (int32_t) roundf(-input_min / input_scale);
-    //     if (input_zero_point < 0) input_zero_point = 0;
-    //     if (input_zero_point > 255) input_zero_point = 255;
-    //
-    //     for (int i = 0; i < x_in_size; i++) {
-    //         float val = ((float *) x_in->data)[i];
-    //         int32_t q = (int32_t) roundf(val / input_scale) + input_zero_point;
-    //         if (q < 0) q = 0;
-    //         if (q > 255) q = 255;
-    //         ((float *) x_in_q->data)[i] = (float) (q - input_zero_point) * input_scale;
-    //     }
-    //
-    //     // --- Quantizzazione PESI (simmetrica int8) ---
-    //     aitensor_t *weights_q = mem_calloc(1, sizeof(aitensor_t));
-    //     weights_q->dim = weights->dim;
-    //     weights_q->shape = weights->shape;
-    //     weights_q->dtype = weights->dtype;
-    //     weights_q->data = mem_calloc(weights_size, sizeof(float));
-    //
-    //     float weight_min = FLT_MAX, weight_max = -FLT_MAX;
-    //     for (int i = 0; i < weights_size; i++) {
-    //         float val = ((float *) weights->data)[i];
-    //         if (val > weight_max) weight_max = val;
-    //         if (val < weight_min) weight_min = val;
-    //     }
-    //
-    //     float weight_scale = fmaxf(fabsf(weight_max), fabsf(weight_min)) / 127.0f;
-    //     if (weight_scale == 0.0f) weight_scale = 0.1f;
-    //
-    //     for (int i = 0; i < weights_size; i++) {
-    //         float val = ((float *) weights->data)[i];
-    //         int8_t q = (int8_t) roundf(val / weight_scale);
-    //         ((float *) weights_q->data)[i] = (float) q * weight_scale;
-    //     }
-    //
-    //     // --- Operazione lineare ---
-    //
-    //     // --- Cleanup ---
-    //     mem_dealloc(x_in_q);
-    //     mem_dealloc(weights_q);
-    // } else {
-    //     layer->linear(x_in, weights, bias, x_out);
-    // }
-}
-
-/* ------------- End Private ------------- */

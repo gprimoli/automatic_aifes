@@ -7,10 +7,13 @@
   #define DIR_SEPARATOR '/'
 #endif
 
-#define BUF_MIN 128
 
-#include <unistd.h>
-#include <sys/time.h>
+
+
+#define INT2_MIN -2
+#define INT2_MAX 1
+
+#define BUF_MIN 128
 
 unsigned int get_seed();
 

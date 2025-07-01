@@ -13,12 +13,11 @@ bool open_csv(FILE **file, const char *base, const char *name, const char *mode)
     return *file != NULL;
 }
 
-bool csv_read(float arr[], uint32_t len, FILE *f) {
-    if (!f || len <= 0) return false;
+bool csv_read_one(float *out, FILE *f) {
+    if (!f || !out) return false;
 
     char value_buf[64];
     int buf_pos = 0;
-    int count = 0;
     int c;
 
     if (feof(f)) {
@@ -26,26 +25,42 @@ bool csv_read(float arr[], uint32_t len, FILE *f) {
         clearerr(f);
     }
 
-    while (count < len && (c = fgetc(f)) != EOF) {
+    while ((c = fgetc(f)) != EOF) {
         if (c == ',' || c == '\n' || c == '\r') {
             if (buf_pos > 0) {
                 value_buf[buf_pos] = '\0';
-                arr[count++] = strtof(value_buf, NULL);
-                buf_pos = 0;
+                *out = strtof(value_buf, NULL);
+                return true;
             }
 
             if (c == '\r') {
                 int next = fgetc(f);
-                if (next != '\n' && next != EOF) {
-                    ungetc(next, f);
-                }
+                if (next != '\n' && next != EOF) ungetc(next, f);
             }
         } else if (buf_pos < sizeof(value_buf) - 1) {
             value_buf[buf_pos++] = (char) c;
         }
     }
 
-    return count == len;
+    if (buf_pos > 0) {
+        value_buf[buf_pos] = '\0';
+        *out = strtof(value_buf, NULL);
+        return true;
+    }
+
+    return false;
+}
+
+bool csv_read(float arr[], uint32_t len, FILE *f) {
+    if (!f || !arr || len == 0) return false;
+
+    for (uint32_t i = 0; i < len; ++i) {
+        if (!csv_read_one(&arr[i], f)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool csv_write(const float arr[], uint32_t len, FILE *f) {

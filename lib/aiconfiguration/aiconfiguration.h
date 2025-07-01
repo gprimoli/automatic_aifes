@@ -70,6 +70,10 @@ typedef enum {
     UNKNOWN_LOSS, MSE, CROSSENTROPY
 } Loss;
 
+typedef enum {
+    UNKNOWN_QUANTIZATION, Q31, Q7, Q1
+} Quantization;
+
 typedef struct ayconfigurationlayer {
     Layer_type type;
     Layer_type activation;
@@ -82,6 +86,7 @@ typedef struct aiconfiguration {
     char *load;
     char *save;
     float pruning;
+    Quantization quantization;
 
     Loss loss;
     Optimizer optimizer;
@@ -100,7 +105,7 @@ typedef struct aiconfiguration {
     aitensor_t *y;
 } aiconfiguration_t;
 
-bool load_config(const char *filename, aiconfiguration_t *ctx);
+bool load_config(aiconfiguration_t *conf, const char *filename);
 
 #endif //AICONFIGURATION_H
 

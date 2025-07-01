@@ -1,7 +1,5 @@
 # Automatic Aifes
 
 # TODO
-- aifes express -> aifes
-- create dropout layer
-- quantizattion training (?)
-- pruning training (?)
+- Information Hiding
+- Function refactoring
