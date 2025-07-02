@@ -42,6 +42,8 @@ int main(int argc, char *argv[]) {
 
     if (conf->training) {
         run_training(conf, model, optimizer);
+    } else {
+        run_evaluation(conf, model);
     }
 
     if (conf->save) {

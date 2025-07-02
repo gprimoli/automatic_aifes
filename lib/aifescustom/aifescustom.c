@@ -290,6 +290,8 @@ void load_model(aiconfiguration_t *conf, aimodel_t *model) {
 }
 
 void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer) {
+    LOG_INFO("Inizio Training");
+
     uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
                                   ? conf->batch_size * conf->input_shape[1]
                                   : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape
@@ -299,7 +301,6 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
     uint32_t batch_train = conf->sample_train / conf->batch_size;
 
     for (int epoch = 0; epoch < conf->epochs; epoch++) {
-        LOG_INFO("Inizio Training");
         LOG_INFO("Epoch %d/%d", epoch + 1, conf->epochs);
         for (int batch = 0; batch < batch_train; batch++) {
             if (!csv_read(conf->x->data, input_elements, x_train) ||
@@ -309,7 +310,6 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
 
             aialgo_train_model(model, conf->x, conf->y, optimizer, conf->batch_size);
         }
-        LOG_INFO("Fine Training\n");
 
         if (conf->pruning > 0) {
             const uint8_t pruning_steps = 5;
@@ -318,14 +318,16 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
             if (pruning_step_size > 0 && ((epoch + 1) % pruning_step_size == 0)) {
                 LOG_INFO("Inizio Pruning");
 
-                const float step = (float) (epoch + 1) / (float) pruning_step_size;
+                const int step = (int) ((epoch + 1) / pruning_step_size);
                 const float prune_fraction = (conf->pruning * step) / (100.0f * (float) pruning_steps);
 
+                LOG_INFO("Step %d prune_fraction %f", step, prune_fraction);
                 prune_global(model, prune_fraction);
 
                 LOG_INFO("Fine Pruning\t%s\n", get_timestamp());
             }
         }
+
 
         run_evaluation(conf, model);
 
@@ -338,6 +340,8 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
         run_evaluation(conf, model);
         LOG_INFO("Fine Pruning finale\t%s\n", get_timestamp());
     }
+
+    LOG_INFO("Fine Training\n");
 }
 
 void run_evaluation(aiconfiguration_t *conf, aimodel_t *model) {
