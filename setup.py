@@ -6,16 +6,17 @@ from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import os
+from sklearn.utils import resample
 
 ## Configuration parameters
 n_nodes = 5
-
-# Create the folder for each node
 base_ip = "172.19.0."
 ip_nodes = [f"{base_ip}{i+2}" for i in range(n_nodes)]
 for i in range(n_nodes):
-    os.mkdir(f'dataset/{ip_nodes[i]}')
-
+    try:
+        os.mkdir(f'dataset/{ip_nodes[i]}')
+    except:
+        print("Folder already created.")
 
 def split_and_save_csv(X, y, n_parts, prefix):
     base_chunk_size = len(X) // n_parts
@@ -32,68 +33,75 @@ def split_and_save_csv(X, y, n_parts, prefix):
         
         start_idx = end_idx
 
+def split_and_save_csv_non_iid(X, y, n_parts, prefix):
+    y_labels = y.idxmax(axis=1)  # trova l'indice della classe per ciascun esempio one-hot
+    data = X.copy()
+    data['Label'] = y_labels
+
+    unique_labels = y_labels.unique()
+    n_labels = len(unique_labels)
+    
+    # Distribuzione delle classi in modo che ogni nodo abbia una o due classi predominanti
+    class_splits = {i: [] for i in range(n_parts)}
+    for i, label in enumerate(unique_labels):
+        indices = data[data['Label'] == label].index.tolist()
+        np.random.shuffle(indices)
+        chunk_size = len(indices) // n_parts
+        for j in range(n_parts):
+            selected = indices[j*chunk_size:(j+1)*chunk_size]
+            class_splits[j].extend(selected)
+
+    # Per ogni nodo salva i dati corrispondenti
+    for i in range(n_parts):
+        idxs = class_splits[i]
+        X_chunk = X.loc[idxs]
+        y_chunk = y.loc[idxs]
+        X_chunk.to_csv(f'dataset/{ip_nodes[i]}/x_{prefix}.csv', index=False, header=False)
+        y_chunk.to_csv(f'dataset/{ip_nodes[i]}/y_{prefix}.csv', index=False, header=False)
+        print(f"[NON-IID] Part {i+1} saved as {prefix}_{ip_nodes[i]}")
+
+
 warnings.filterwarnings('ignore')
 
 # Load and preprocess dataset
-df_0 = pd.read_csv('dataset/KDDTrain.txt')
+df_0 = pd.read_csv('dataset/dataset.csv')
 df = df_0.copy()
 
-columns = [
-    'duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 
-    'land', 'wrong_fragment', 'urgent', 'hot', 'num_failed_logins', 'logged_in',
-    'num_compromised', 'root_shell', 'su_attempted', 'num_root', 'num_file_creations', 
-    'num_shells', 'num_access_files', 'num_outbound_cmds', 'is_host_login', 'is_guest_login',
-    'count', 'srv_count', 'serror_rate', 'srv_serror_rate', 'rerror_rate', 'srv_rerror_rate',
-    'same_srv_rate', 'diff_srv_rate', 'srv_diff_host_rate', 'dst_host_count', 'dst_host_srv_count', 
-    'dst_host_same_srv_rate', 'dst_host_diff_srv_rate', 'dst_host_same_src_port_rate', 
-    'dst_host_srv_diff_host_rate', 'dst_host_serror_rate', 'dst_host_srv_serror_rate', 
-    'dst_host_rerror_rate', 'dst_host_srv_rerror_rate', 'attack', 'level'
-]
-df.columns = columns
-df = df.dropna()
+X = df.drop(["Label"], axis=1)
+y = df["Label"]
 
-# Binary classification: "normal" vs "attack"
-df['attack'] = df['attack'].apply(lambda x: "normal" if x == 'normal' else "attack")
+le_grouped = preprocessing.LabelEncoder()
+y = pd.Series(le_grouped.fit_transform(y), index=df.index)
+y = pd.get_dummies(y, dtype=float)
 
-# Label encoding for categorical columns
-cat_features = df.select_dtypes(include='object').columns
-le = preprocessing.LabelEncoder()
-clm = ['protocol_type', 'service', 'flag', 'attack']
-for x in clm:
-    df[x] = le.fit_transform(df[x])
-
-X = df.drop(["attack"], axis=1)
-y = df["attack"]
+# Conteggio e visualizzazione delle classi target
+print("Numero di classi target:", y.nunique())
+print("\nDistribuzione delle classi (codici numerici):")
+print(y.value_counts())
 
 # Split data into train and test sets
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=43)
 
-# Retain the original indices for X_train and X_test
-X_train_indices = X_train.index
-X_test_indices = X_test.index
-
-# Select a subset of columns for training
-columns = ['duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'wrong_fragment', 
-           'hot', 'logged_in', 'num_compromised', 'count', 'srv_count', 'serror_rate', 'srv_serror_rate', 
-           'rerror_rate']
-X_train = X_train[columns]
-X_test = X_test[columns]
-
 # Scale the features, but retain the original indices
 scaler = MinMaxScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+X_train_index = X_train.index
+X_test_index = X_test.index
+X_columns = X.columns
 
-# Convert the scaled data back to DataFrame with the original indices
-X_train = pd.DataFrame(X_train_scaled, columns=columns, index=X_train_indices)
-X_test = pd.DataFrame(X_test_scaled, columns=columns, index=X_test_indices)
+# Applica lo scaling
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Ricrea i DataFrame con indici e colonne
+X_train = pd.DataFrame(X_train, columns=X_columns, index=X_train_index)
+X_test = pd.DataFrame(X_test, columns=X_columns, index=X_test_index)
 
 # Sampling 5% of the data
-sample_indices_train = X_train.sample(frac=0.5, random_state=42).index
+sample_indices_train = X_train.sample(frac=1, random_state=42).index
 X_train_sample = X_train.loc[sample_indices_train]
 y_train_sample = y_train.loc[sample_indices_train]
 
-sample_indices_test = X_test.sample(frac=0.5, random_state=42).index
+sample_indices_test = X_test.sample(frac=1, random_state=42).index
 X_test_sample = X_test.loc[sample_indices_test]
 y_test_sample = y_test.loc[sample_indices_test]
 
@@ -103,5 +111,8 @@ X_test_sample.to_csv("dataset/X_test.csv", index=False, header=False)
 y_train_sample.to_csv("dataset/y_train.csv", index=False, header=False)
 y_test_sample.to_csv("dataset/y_test.csv", index=False, header=False)
 
-split_and_save_csv(X_train_sample, y_train_sample, n_nodes, prefix='train')
+split_and_save_csv_non_iid(X_train_sample, y_train_sample, n_nodes, prefix='train')
 split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='test')
+
+#split_and_save_csv_non_iid(X_train_sample, y_train_sample, n_nodes, prefix='train')
+#split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='test')
