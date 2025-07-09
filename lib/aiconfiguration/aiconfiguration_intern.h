@@ -42,7 +42,7 @@ static Quantization parse_quantization(const char *value) {
     if (strcmp_ignorecase(value, "Q31") == 0) return Q31;
     if (strcmp_ignorecase(value, "Q7") == 0) return Q7;
     if (strcmp_ignorecase(value, "Q1") == 0) return Q1;
-    return UNKNOWN_QUANTIZATION;
+    return F32;
 }
 
 static void parse_int_string_to_array(const char *value, uint16_t *arr, uint32_t max_count) {

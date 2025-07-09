@@ -248,7 +248,9 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
 
 void save_model(aiconfiguration_t *conf, aimodel_t *model) {
     FILE *f;
-    open_csv(&f, conf->basedir, conf->save, "w");
+    if (!open_csv(&f, conf->basedir, conf->save, "w")) {
+        SAFE_EXIT_FAILURE("Impossible to open %s/%s", conf->basedir, conf->save)
+    }
 
     const ailayer_t *layer = model->input_layer;
     for (int i = 1; i < model->layer_count; i++) {
@@ -256,12 +258,20 @@ void save_model(aiconfiguration_t *conf, aimodel_t *model) {
 
         if (strcmp(layer->layer_type->name, "Conv2D") == 0) {
             ailayer_conv2d_t *l = (ailayer_conv2d_t *) layer;
-            write_aitensor_to_csv(&(l->weights), f);
-            write_aitensor_to_csv(&(l->bias), f);
+            if (!write_aitensor_to_csv(&(l->weights), f)) {
+                SAFE_EXIT_FAILURE("Impossibile to write Conv2D weights");
+            }
+            if (!write_aitensor_to_csv(&(l->bias), f)) {
+                SAFE_EXIT_FAILURE("Impossibile to write Conv2D bias");
+            }
         } else if (strcmp(layer->layer_type->name, "Dense") == 0) {
             ailayer_dense_t *l = (ailayer_dense_t *) layer;
-            write_aitensor_to_csv(&(l->weights), f);
-            write_aitensor_to_csv(&(l->bias), f);
+            if (!write_aitensor_to_csv(&(l->weights), f)) {
+                SAFE_EXIT_FAILURE("Impossibile to write Dense weights");
+            }
+            if (!write_aitensor_to_csv(&(l->bias), f)) {
+                SAFE_EXIT_FAILURE("Impossibile to write Dense bias");
+            }
         }
     }
 

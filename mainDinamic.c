@@ -11,6 +11,7 @@
 #include "aiconfiguration.h"
 #include "aifescustom_internal.h"
 
+
 int main(int argc, char *argv[]) {
     unsigned int seed = get_seed();
     srand(seed);
@@ -32,6 +33,11 @@ int main(int argc, char *argv[]) {
         SAFE_EXIT_FAILURE("Errore costruzione modello");
     }
 
+    LOG_INFO("Epoch: %d", conf->epochs);
+    LOG_INFO("Batch size: %d", conf->batch_size);
+    LOG_INFO("Pruning: %f%%", conf->pruning);
+    LOG_INFO("Qauntizzation: %d", conf->quantization);
+
     aiprint("\n-------------- Model structure ---------------\n");
     aialgo_print_model_structure(model);
     aiprint("----------------------------------------------\n\n");
@@ -50,15 +56,12 @@ int main(int argc, char *argv[]) {
         save_model(conf, model);
     }
 
-    if (conf->quantization != UNKNOWN_QUANTIZATION) {
+    if (conf->quantization != F32) {
         quantize(model, conf->quantization);
     }
 
     run_evaluation(conf, model);
 
-    LOG_INFO("Batch size: %d", conf->batch_size);
-    LOG_INFO("Pruning: %f%%", conf->pruning);
-    LOG_INFO("Qauntizzation: %d", conf->quantization);
     LOG_INFO("Memoria allocata: %.4f KB", mem_total() / 1024.0);
 
     SAFE_EXIT_SUCCESS("Finish: ALL RIGHT");

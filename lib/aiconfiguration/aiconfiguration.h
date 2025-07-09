@@ -63,15 +63,19 @@ typedef enum {
 } Layer_type;
 
 typedef enum {
-    UNKNOWN_OPTIMIZER, ADAM, SGD
+    UNKNOWN_OPTIMIZER,
+
+    ADAM, SGD
 } Optimizer;
 
 typedef enum {
-    UNKNOWN_LOSS, MSE, CROSSENTROPY
+    UNKNOWN_LOSS,
+
+    MSE, CROSSENTROPY
 } Loss;
 
 typedef enum {
-    UNKNOWN_QUANTIZATION, Q31, Q7, Q1
+    F32, Q31, Q7, Q1
 } Quantization;
 
 typedef struct ayconfigurationlayer {
@@ -105,49 +109,13 @@ typedef struct aiconfiguration {
     aitensor_t *y;
 } aiconfiguration_t;
 
+typedef struct aiconfiguration aiconfiguration_t;
+
 bool load_config(aiconfiguration_t *conf, const char *filename);
 
-#endif //AICONFIGURATION_H
-
-/*
-// TODO implement;
+const char *quantization_to_str(Quantization quantization);
+const char *layer_type_to_string(Layer_type type);
 const char *optimizer_to_string(Optimizer opt);
 const char *loss_to_string(Loss opt);
-const char *layer_type_to_string(Layer_type type);
-const char *activation_to_string(Activation_Fun act);
 
-const char *layer_type_to_string(Layer_type type) {
-    switch (type) {
-        case DENSE: return "dense";
-        case CONV2D: return "Conv2D";
-        case MAXPOOL2D: return "maxpool2d";
-        case FLATTEN: return "flatten";
-        default: return "unknown";
-    }
-}
-
-const char *activation_to_string(Activation_Fun act) {
-    switch (act) {
-        case RELU: return "relu";
-        case SIGMOID: return "sigmoid";
-        case SOFTMAX: return "softmax";
-        default: return "unknown";
-    }
-}
-
-const char *optimizer_to_string(Optimizer opt) {
-    switch (opt) {
-        case ADAM: return "adam";
-        case SGD: return "sgd";
-        default: return "unknown";
-    }
-}
-
-const char *loss_to_string(Loss opt){
-    switch (opt) {
-        case MSE: return "Mean Squared Error";
-        case CROSSENTROPY: return "Crossentropy";
-        default: return "unknown";
-    }
-}
- */
+#endif //AICONFIGURATION_H
