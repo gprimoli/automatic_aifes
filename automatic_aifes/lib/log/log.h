@@ -2,6 +2,9 @@
 #define LOG_H
 
 #include <stdio.h>
+#include <stdbool.h>
+
+#include "log_internal.h"
 
 typedef enum {
     LOG_NONE = 0,
@@ -15,20 +18,17 @@ typedef enum {
 extern LogLevel CURRENT_LOG_LEVEL;
 extern FILE *log_file;
 
-void initLogFile(const char *path);
+bool initLogFile(const char *path);
 
 void closeLogFile(void);
 
-const char *get_timestamp(void);
-
-
 #define LOG_ERROR(fmt, ...)  do { \
 if (CURRENT_LOG_LEVEL >= LOG_ERROR_ONLY) { \
-fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__); \
+fprintf(stderr, "[%s] [ERROR] " fmt "\n", get_timestamp(), ##__VA_ARGS__); \
 fflush(stderr); \
 } \
 if ((CURRENT_LOG_LEVEL == LOG_FILE_ONLY || CURRENT_LOG_LEVEL == LOG_VERBOSE) && log_file) { \
-fprintf(log_file, "[ERROR] " fmt "\n", ##__VA_ARGS__); \
+fprintf(log_file, "[%s] [ERROR] " fmt "\n", get_timestamp(), ##__VA_ARGS__); \
 fflush(log_file); \
 } \
 } while (0)
@@ -36,23 +36,23 @@ fflush(log_file); \
 // LOG_WARN
 #define LOG_WARN(fmt, ...)  do { \
 if (CURRENT_LOG_LEVEL >= LOG_WARNINGS) { \
-fprintf(stderr, "[WARN] " fmt "\n", ##__VA_ARGS__); \
+fprintf(stderr, "[%s] [WARN] " fmt "\n", get_timestamp(), ##__VA_ARGS__); \
 fflush(stderr); \
 } \
 if ((CURRENT_LOG_LEVEL == LOG_FILE_ONLY || CURRENT_LOG_LEVEL == LOG_VERBOSE) && log_file) { \
-fprintf(log_file, "[WARN] " fmt "\n", ##__VA_ARGS__); \
+fprintf(log_file, "[%s] [WARN] " fmt "\n", get_timestamp(), ##__VA_ARGS__); \
 fflush(log_file); \
 } \
 } while (0)
 
 // LOG_INFO
 #define LOG_INFO(fmt, ...)  do { \
-if (CURRENT_LOG_LEVEL >= LOG_VERBOSE) { \
-fprintf(stdout, "[INFO] " fmt "\n", ##__VA_ARGS__); \
+if (CURRENT_LOG_LEVEL >= LOG_VERBOSE_NO_FILE) { \
+fprintf(stdout, "[%s] [INFO] " fmt "\n", get_timestamp(), ##__VA_ARGS__); \
 fflush(stdout); \
 } \
 if ((CURRENT_LOG_LEVEL == LOG_FILE_ONLY || CURRENT_LOG_LEVEL == LOG_VERBOSE) && log_file) { \
-fprintf(log_file, "[INFO] " fmt "\n", ##__VA_ARGS__); \
+fprintf(log_file, "[%s] [INFO] " fmt "\n", get_timestamp(), ##__VA_ARGS__); \
 fflush(log_file); \
 } \
 } while (0)

@@ -26,11 +26,13 @@
 #define CLOSE_ALL_FILES(...) close_all_files(NUM_ARGS(__VA_ARGS__), __VA_ARGS__)
 #define RESET_ALL_FILES(...) reset_files(NUM_ARGS(__VA_ARGS__), __VA_ARGS__)
 
+bool open_csv(FILE **file, const char *base, const char *name, const char *mode);
+
+bool csv_read_one(float *out, FILE *f);
+
 bool csv_read(float arr[], uint32_t len, FILE *f);
 
 bool csv_write(const float arr[], uint32_t len, FILE *f);
-
-bool open_csv(FILE **file, const char *base, const char *name, const char *mode);
 
 void close_all_files(uint32_t count, ...);
 

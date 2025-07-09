@@ -45,7 +45,21 @@ static MemNode *head = NULL;
 void *mem_calloc(const size_t count, const size_t size) {
     void *ptr = calloc(count, size);
     mem_register(ptr, count * size);
+
+    if (ptr == NULL) {
+        SAFE_EXIT_FAILURE("Not enought memory!");
+    }
+
     return ptr;
+}
+
+char *mem_strdup(const char *src) {
+    if (!src) return NULL;
+    size_t len = strlen(src);
+    char *dest = mem_calloc(len + 1, sizeof(char));
+    if (!dest) return NULL;
+    memcpy(dest, src, len);
+    return dest;
 }
 
 void mem_free() {
@@ -109,7 +123,7 @@ void safe_exit_failure(char *msg, ...) {
 
         LOG_ERROR("%s", formatted);
     }
-    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, save, load, log_file);
+    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, log_file);
     exit(EXIT_FAILURE);
 }
 
@@ -124,7 +138,7 @@ void safe_exit_success(char *msg, ...) {
 
         LOG_INFO("%s", formatted);
     }
-    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, save, load, log_file);
+    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, log_file);
     exit(EXIT_SUCCESS);
 }
 
