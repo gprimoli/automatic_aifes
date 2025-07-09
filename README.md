@@ -21,4 +21,3 @@ To Do:
 
 - [ ] Define the model merging process, if this should be done by Node.js or by the C-Code. Currently it is demened to a Python script. To change on line 59 of `gossip_learning.js` in case this behaviour is not okay.
 - [ ] Define the protocol for weights exchange, currently it sends the weights to a random node as written on line 163 of `gossip_learning.js`. Notice that this apporach also implies that a custom node is selected for the running of the first gossip of the model.
-   =======
