@@ -1,13 +1,16 @@
 #include <string.h>
 
+#include <float.h>
+
 #include "log.h"
 #include "csv.h"
 #include "aifes.h"
 #include "memmanager.h"
 #include "aifescustom.h"
+#include "csv_internal.h"
+#include "aifescustom_pruning.h"
 #include "aifescustom_internal.h"
-
-FILE *x_train = NULL, *y_train = NULL, *x_test = NULL, *y_test = NULL;
+#include "aifescustom_quantizzation.h"
 
 aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
     aiopti_t *optimizer = NULL;
@@ -44,10 +47,6 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
                         l->base.forward = ailayer_dense_forward_Q7;
                         break;
                     }
-                    case Q1: {
-                        l->base.forward = ailayer_dense_forward_Q1;
-                        break;
-                    }
                     default: ;
                 }
 
@@ -80,10 +79,6 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
                     }
                     case Q7: {
                         l->base.forward = ailayer_conv2d_forward_Q7;
-                        break;
-                    }
-                    case Q1: {
-                        l->base.forward = ailayer_conv2d_forward_Q1;
                         break;
                     }
                     default: ;
@@ -128,8 +123,10 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
             default: return false;
         }
 
-        if (current.type == MAXPOOL2D || current.type == FLATTEN || current.type == BATCH_NORM || current.type ==
-            RESHAPE) {
+        if (current.type == MAXPOOL2D
+            || current.type == FLATTEN
+            || current.type == BATCH_NORM
+            || current.type == RESHAPE) {
             continue;
         }
 
@@ -249,7 +246,7 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
 void save_model(aiconfiguration_t *conf, aimodel_t *model) {
     FILE *f;
     if (!open_csv(&f, conf->basedir, conf->save, "w")) {
-        SAFE_EXIT_FAILURE("Impossible to open %s/%s", conf->basedir, conf->save)
+        SAFE_EXIT_FAILURE("Impossible to open %s/%s", conf->basedir, conf->save);
     }
 
     const ailayer_t *layer = model->input_layer;
@@ -258,18 +255,18 @@ void save_model(aiconfiguration_t *conf, aimodel_t *model) {
 
         if (strcmp(layer->layer_type->name, "Conv2D") == 0) {
             ailayer_conv2d_t *l = (ailayer_conv2d_t *) layer;
-            if (!write_aitensor_to_csv(&(l->weights), f)) {
+            if (!write_aitensor_to_csv(&(l->weights), f, conf->quantization)) {
                 SAFE_EXIT_FAILURE("Impossibile to write Conv2D weights");
             }
-            if (!write_aitensor_to_csv(&(l->bias), f)) {
+            if (!write_aitensor_to_csv(&(l->bias), f, conf->quantization)) {
                 SAFE_EXIT_FAILURE("Impossibile to write Conv2D bias");
             }
         } else if (strcmp(layer->layer_type->name, "Dense") == 0) {
             ailayer_dense_t *l = (ailayer_dense_t *) layer;
-            if (!write_aitensor_to_csv(&(l->weights), f)) {
+            if (!write_aitensor_to_csv(&(l->weights), f, conf->quantization)) {
                 SAFE_EXIT_FAILURE("Impossibile to write Dense weights");
             }
-            if (!write_aitensor_to_csv(&(l->bias), f)) {
+            if (!write_aitensor_to_csv(&(l->bias), f, conf->quantization)) {
                 SAFE_EXIT_FAILURE("Impossibile to write Dense bias");
             }
         }
@@ -304,78 +301,109 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
 
     uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
                                   ? conf->batch_size * conf->input_shape[1]
-                                  : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape
-                                    [3];
+                                  : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape[
+                                        3];
     uint32_t output_elements = conf->batch_size * conf->layers[conf->num_layer - 1].params.dense.neurons;
 
-    uint32_t batch_train = conf->sample_train / conf->batch_size;
+    uint32_t batch_train = conf->sample_number.train / conf->batch_size;
+
+
+    FILE *f_x_train_set, *f_y_train_set;
+    FILE *f_x_validation_set, *f_y_validation_set;
+    FILE *f_x_test_set, *f_y_test_set;
+
+    if (!open_csv(&f_x_train_set, conf->basedir, "x_train.csv", "r")
+        || !open_csv(&f_y_train_set, conf->basedir, "y_train.csv", "r")
+        || !open_csv(&f_x_validation_set, conf->basedir, "x_validation.csv", "r")
+        || !open_csv(&f_y_validation_set, conf->basedir, "y_validation.csv", "r")
+        || !open_csv(&f_x_test_set, conf->basedir, "x_test.csv", "r")
+        || !open_csv(&f_y_test_set, conf->basedir, "y_test.csv", "r")) {
+        SAFE_EXIT_FAILURE("Errore apertura file CSV");
+    }
 
     for (int epoch = 0; epoch < conf->epochs; epoch++) {
         LOG_INFO("Epoch %d/%d", epoch + 1, conf->epochs);
         for (int batch = 0; batch < batch_train; batch++) {
-            if (!csv_read(conf->x->data, input_elements, x_train) ||
-                !csv_read(conf->y->data, output_elements, y_train)) {
+            if (!csv_read(conf->x->data, input_elements, f_x_train_set) ||
+                !csv_read(conf->y->data, output_elements, f_y_train_set)) {
                 SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
             }
 
             aialgo_train_model(model, conf->x, conf->y, optimizer, conf->batch_size);
         }
 
-        if (conf->pruning > 0) {
+        RESET_ALL_FILES(f_x_train_set, f_y_train_set);
+
+        if (conf->pruning_aware_training && conf->pruning > 0) {
             const uint8_t pruning_steps = 5;
             const uint32_t pruning_step_size = conf->epochs / pruning_steps;
 
             if (pruning_step_size > 0 && ((epoch + 1) % pruning_step_size == 0)) {
-                LOG_INFO("Inizio Pruning");
-
                 const int step = (int) ((epoch + 1) / pruning_step_size);
                 const float prune_fraction = (conf->pruning * step) / (100.0f * (float) pruning_steps);
 
                 LOG_INFO("Step %d prune_fraction %f", step, prune_fraction);
                 prune_global(model, prune_fraction);
-
-                LOG_INFO("Fine Pruning\t%s\n", get_timestamp());
             }
         }
 
-
-        run_evaluation(conf, model);
-
-        RESET_ALL_FILES(x_train, y_train);
+        LOG_INFO("Inizio Valutazione con: validation.csv");
+        run_inference(conf, model, f_x_validation_set, f_y_validation_set, conf->sample_number.validation);
     }
 
     if (conf->pruning > 0) {
-        LOG_INFO("Inizio Pruning finale");
         prune_global(model, conf->pruning / 100.0f);
-        run_evaluation(conf, model);
-        LOG_INFO("Fine Pruning finale\t%s\n", get_timestamp());
     }
 
-    LOG_INFO("Fine Training\n");
+    LOG_INFO("Inizio Valutazione con: test.csv");
+    run_inference(conf, model, f_x_test_set, f_y_test_set, conf->sample_number.test);
+
+    CLOSE_ALL_FILES(f_x_train_set, f_y_train_set, f_x_validation_set, f_y_validation_set, f_x_test_set, f_y_test_set);
+
+    LOG_INFO("Fine Training");
 }
 
 void run_evaluation(aiconfiguration_t *conf, aimodel_t *model) {
-    uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
-                                  ? conf->batch_size * conf->input_shape[1]
-                                  : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape
-                                    [3];
-    uint32_t output_elements = conf->batch_size * conf->layers[conf->num_layer - 1].params.dense.neurons;
+    FILE *f_x_unvisioned_set, *f_y_unvisioned_set;
+    if (!open_csv(&f_x_unvisioned_set, conf->basedir, "x_unvisioned.csv", "r")
+        || !open_csv(&f_y_unvisioned_set, conf->basedir, "y_unvisioned.csv", "r")) {
+        SAFE_EXIT_FAILURE("Errore apertura file CSV");
+    }
+    LOG_INFO("Inizio Valutazione con: unvisioned.csv");
 
-    uint32_t batch_test = conf->sample_test / conf->batch_size;
+    run_inference(conf, model, f_x_unvisioned_set, f_y_unvisioned_set, conf->sample_number.unvisioned);
 
-    LOG_INFO("Inizio Testing");
-    float loss, acc;
-    loss = acc = 0.0f;
-    for (int batch = 0; batch < batch_test; batch++) {
-        if (!csv_read(conf->x->data, input_elements, x_test) ||
-            !csv_read(conf->y->data, output_elements, y_test)) {
-            SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
-        }
-        if (!aialgo_calc_loss_acc_model_f32(conf, model, &loss, &acc))
-            SAFE_EXIT_FAILURE("Acc loss error");
+    CLOSE_ALL_FILES(f_x_unvisioned_set, f_y_unvisioned_set);
+}
+
+bool calc_scale_and_zero_point(Quantization qType, const aitensor_t *t, void *qParam) {
+    if (!t || !t->data || !qParam) return false;
+
+    float min_val = FLT_MAX;
+    float max_val = -FLT_MAX;
+
+    float *data = (float *) t->data;
+    uint32_t size = aimath_tensor_elements(t);
+
+    for (int i = 0; i < size; i++) {
+        float v = data[i];
+        if (v < min_val) min_val = v;
+        if (v > max_val) max_val = v;
     }
 
-    LOG_INFO("Loss: %.5f\tAccuracy: %.5f", loss, acc);
-    LOG_INFO("Fine Testing\n");
-    RESET_ALL_FILES(x_test, y_test);
+    switch (qType) {
+        case Q31: {
+            aimath_q31_params_t *q = (aimath_q31_params_t *) qParam;
+            aimath_q31_calc_q_params_from_f32(min_val, max_val, q);
+            break;
+        }
+        case Q7: {
+            aimath_q7_params_t *q = (aimath_q7_params_t *) qParam;
+            aimath_q7_calc_q_params_from_f32(min_val, max_val, q);
+            break;
+        }
+        default: return false;
+    }
+
+    return true;
 }

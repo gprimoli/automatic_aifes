@@ -11,7 +11,6 @@ const char *quantization_to_str(Quantization quantization) {
     switch (quantization) {
         case Q31: return "Q31";
         case Q7: return "Q7";
-        case Q1: return "Q1";
         default: return "F32";
     }
 }

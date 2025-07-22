@@ -2,11 +2,7 @@
 #define AICONFIGURATION_INTERN_H
 
 #include <ctype.h>
-#include <float.h>
-#include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
-#include <stdbool.h>
 
 #include "log.h"
 #include "csv.h"
@@ -41,7 +37,6 @@ static Optimizer parse_optimizer(const char *value) {
 static Quantization parse_quantization(const char *value) {
     if (strcmp_ignorecase(value, "Q31") == 0) return Q31;
     if (strcmp_ignorecase(value, "Q7") == 0) return Q7;
-    if (strcmp_ignorecase(value, "Q1") == 0) return Q1;
     return F32;
 }
 
@@ -59,8 +54,7 @@ static void parse_int_string_to_array(const char *value, uint16_t *arr, uint32_t
 }
 
 
-static uint32_t count_lines_in_file(const char *filepath) {
-    FILE *f = fopen(filepath, "r");
+static uint32_t count_lines_in_file(FILE *f) {
     if (f == NULL) return 0;
 
     int lines = 0;
@@ -69,7 +63,6 @@ static uint32_t count_lines_in_file(const char *filepath) {
         if (ch == '\n') lines++;
     }
 
-    fclose(f);
     return lines;
 }
 
@@ -102,26 +95,32 @@ static int handler(void *data, const char *section, const char *name, const char
         if (strcmp_ignorecase(name, "basedir") == 0) {
             conf->basedir = mem_strdup(value);
 
-            char filepath[BUF_MIN] = {0};
-            sprintf(filepath, "%s%c%s", conf->basedir, DIR_SEPARATOR, "y_train.csv");
-            conf->sample_train = count_lines_in_file(filepath);
-
-            sprintf(filepath, "%s%c%s", conf->basedir, DIR_SEPARATOR, "y_test.csv");
-            conf->sample_test = count_lines_in_file(filepath);
-
-            if (conf->sample_train == 0 || conf->sample_test == 0) {
-                return 0;
+            FILE *f_y_train_set, *f_y_validation_set, *f_y_test_set, *f_y_unvisioned_set;
+            if (!initLogFile(conf->basedir)
+                || !open_csv(&f_y_train_set, conf->basedir, "y_train.csv", "r")
+                || !open_csv(&f_y_validation_set, conf->basedir, "y_validation.csv", "r")
+                || !open_csv(&f_y_test_set, conf->basedir, "y_test.csv", "r")
+                || !open_csv(&f_y_unvisioned_set, conf->basedir, "y_unvisioned.csv", "r")) {
+                SAFE_EXIT_FAILURE("Errore apertura file CSV");
             }
 
-            if (!open_csv(&x_train, conf->basedir, "x_train.csv", "r")
-                || !open_csv(&y_train, conf->basedir, "y_train.csv", "r")
-                || !open_csv(&x_test, conf->basedir, "x_test.csv", "r")
-                || !open_csv(&y_test, conf->basedir, "y_test.csv", "r")
-                || !initLogFile(conf->basedir)) {
-                SAFE_EXIT_FAILURE("Errore apertura file CSV");
+            conf->sample_number.train = count_lines_in_file(f_y_train_set);
+            conf->sample_number.validation = count_lines_in_file(f_y_validation_set);
+            conf->sample_number.test = count_lines_in_file(f_y_test_set);
+            conf->sample_number.unvisioned = count_lines_in_file(f_y_unvisioned_set);
+
+            CLOSE_ALL_FILES(f_y_train_set, f_y_validation_set, f_y_test_set, f_y_unvisioned_set);
+
+            if (conf->sample_number.train == 0
+                || conf->sample_number.validation == 0
+                || conf->sample_number.test == 0
+                || conf->sample_number.unvisioned == 0) {
+                return 0;
             }
         } else if (strcmp_ignorecase(name, "training") == 0) {
             conf->training = atoi(value) != 0;
+        } else if (strcmp_ignorecase(name, "pruning_aware_training") == 0) {
+            conf->pruning_aware_training = atoi(value) != 0;
         } else if (strcmp_ignorecase(name, "load") == 0) {
             conf->load = mem_strdup(value);
         } else if (strcmp_ignorecase(name, "save") == 0) {

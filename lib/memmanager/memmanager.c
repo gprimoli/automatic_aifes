@@ -123,7 +123,7 @@ void safe_exit_failure(char *msg, ...) {
 
         LOG_ERROR("%s", formatted);
     }
-    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, log_file);
+    CLOSE_ALL_FILES(log_file);// TODO: Creare un manger di file simile a questo della memoria. Ogni volta che apro un file lo mette in una lista e poi posso chiuderli correttamente in caso di errori!
     exit(EXIT_FAILURE);
 }
 
@@ -138,7 +138,7 @@ void safe_exit_success(char *msg, ...) {
 
         LOG_INFO("%s", formatted);
     }
-    CLOSE_ALL_FILES(x_train, y_train, x_test, y_test, log_file);
+    CLOSE_ALL_FILES(log_file);// TODO: Creare un manger di file simile a questo della memoria. Ogni volta che apro un file lo mette in una lista e poi posso chiuderli correttamente in caso di errori!
     exit(EXIT_SUCCESS);
 }
 

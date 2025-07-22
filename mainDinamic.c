@@ -9,20 +9,21 @@
 #include "memmanager.h"
 #include "aifescustom.h"
 #include "aiconfiguration.h"
-#include "aifescustom_internal.h"
+#include "aifescustom_quantizzation.h"
 
 
 int main(int argc, char *argv[]) {
-    unsigned int seed = get_seed();
-    srand(seed);
-    LOG_INFO("Seed: %u", seed);
-
     aiconfiguration_t *conf = mem_calloc(1, sizeof(aiconfiguration_t));
     aimodel_t *model = mem_calloc(1, sizeof(aimodel_t));
 
     if (argc != 2) {
         SAFE_EXIT_FAILURE("Inserire path configurazione");
     }
+
+    unsigned int seed = get_seed(); //730250921 || get_seed()
+    srand(seed);
+
+    LOG_INFO("Seed: %u", seed);
 
     if (load_config(conf, argv[1]) != 0) {
         SAFE_EXIT_FAILURE("Errore file configurazione");
@@ -48,16 +49,14 @@ int main(int argc, char *argv[]) {
 
     if (conf->training) {
         run_training(conf, model, optimizer);
-    } else {
-        run_evaluation(conf, model);
     }
+
+    // if (conf->quantization != F32) {//TODO NON FUNZIONA!!!
+    //     quantize(model, conf->quantization);
+    // }
 
     if (conf->save) {
         save_model(conf, model);
-    }
-
-    if (conf->quantization != F32) {
-        quantize(model, conf->quantization);
     }
 
     run_evaluation(conf, model);
