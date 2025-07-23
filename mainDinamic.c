@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
 
     LOG_INFO("Epoch: %d", conf->epochs);
     LOG_INFO("Batch size: %d", conf->batch_size);
-    LOG_INFO("Pruning: %f%%", conf->pruning);
+    LOG_INFO("Pruning: %.2f%%", conf->pruning);
     LOG_INFO("Qauntizzation: %d", conf->quantization);
 
     aiprint("\n-------------- Model structure ---------------\n");
@@ -50,10 +50,6 @@ int main(int argc, char *argv[]) {
     if (conf->training) {
         run_training(conf, model, optimizer);
     }
-
-    // if (conf->quantization != F32) {//TODO NON FUNZIONA!!!
-    //     quantize(model, conf->quantization);
-    // }
 
     if (conf->save) {
         save_model(conf, model);

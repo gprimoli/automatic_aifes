@@ -121,6 +121,8 @@ static int handler(void *data, const char *section, const char *name, const char
             conf->training = atoi(value) != 0;
         } else if (strcmp_ignorecase(name, "pruning_aware_training") == 0) {
             conf->pruning_aware_training = atoi(value) != 0;
+        }else if (strcmp_ignorecase(name, "already_quantized") == 0) {
+            conf->already_quantized = atoi(value) != 0;
         } else if (strcmp_ignorecase(name, "load") == 0) {
             conf->load = mem_strdup(value);
         } else if (strcmp_ignorecase(name, "save") == 0) {

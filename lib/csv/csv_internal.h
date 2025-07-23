@@ -22,21 +22,21 @@ static bool write_aitensor_to_csv(aitensor_t *l, FILE *f, Quantization qType) {
 
     float *data = (float *) l->data;
 
-    switch (qType) {
-        case Q31: {
-            aimath_q31_params_t *qp = (aimath_q31_params_t *) l->tensor_params;
-            if (qp == NULL) return false;
-            fprintf(f, "%hu, %d\n", qp->shift, qp->zero_point);
-            break;
-        }
-        case Q7: {
-            aimath_q7_params_t *qp = (aimath_q7_params_t *) l->tensor_params;
-            if (qp == NULL) return false;
-            fprintf(f, "%hu, %d\n", qp->shift, qp->zero_point);
-            break;
-        }
-        default: break;
-    }
+    // switch (qType) {
+    //     case Q31: {
+    //         aimath_q31_params_t *qp = (aimath_q31_params_t *) l->tensor_params;
+    //         if (qp == NULL) return false;
+    //         fprintf(f, "%hu, %d\n", qp->shift, qp->zero_point);
+    //         break;
+    //     }
+    //     case Q7: {
+    //         aimath_q7_params_t *qp = (aimath_q7_params_t *) l->tensor_params;
+    //         if (qp == NULL) return false;
+    //         fprintf(f, "%hu, %d\n", qp->shift, qp->zero_point);
+    //         break;
+    //     }
+    //     default: break;
+    // }
 
     return csv_write(data, len, f);
 }

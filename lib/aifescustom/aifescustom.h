@@ -19,6 +19,6 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
 
 void run_evaluation(aiconfiguration_t *conf, aimodel_t *model);
 
-bool calc_scale_and_zero_point(Quantization qType, const aitensor_t *t, void *qParam);
+bool calc_scale_and_zero_point(Quantization qType, const aitensor_t *t, void **qParam);
 
 #endif //AIFESCUSTOM_H

@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-LogLevel CURRENT_LOG_LEVEL = LOG_VERBOSE; //LOG_VERBOSE_NO_FILE
+LogLevel CURRENT_LOG_LEVEL = LOG_VERBOSE_NO_FILE; // LOG_VERBOSE || LOG_VERBOSE_NO_FILE
 FILE *log_file = NULL;
 
 bool initLogFile(const char *path) {

@@ -94,6 +94,7 @@ typedef struct aiconfiguration {
     char *basedir;
     bool training;
     bool pruning_aware_training;
+    bool already_quantized;
     char *load;
     char *save;
     float pruning;
@@ -113,6 +114,7 @@ typedef struct aiconfiguration {
     samplenumber_t sample_number;
     aitensor_t *x;
     aitensor_t *y;
+
 } aiconfiguration_t;
 
 typedef struct aiconfiguration aiconfiguration_t;

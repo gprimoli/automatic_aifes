@@ -12,6 +12,8 @@
 #include "aifescustom_internal.h"
 #include "aifescustom_quantizzation.h"
 
+bool is_quantizate = false; //TODO: refactoring
+
 aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
     aiopti_t *optimizer = NULL;
 
@@ -38,16 +40,8 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
                 l->neurons = current.params.dense.neurons;
                 layers = ailayer_dense_f32_default(l, layers);
 
-                switch (conf->quantization) {
-                    case Q31: {
-                        l->base.forward = ailayer_dense_forward_Q31;
-                        break;
-                    }
-                    case Q7: {
-                        l->base.forward = ailayer_dense_forward_Q7;
-                        break;
-                    }
-                    default: ;
+                if (conf->quantization) {
+                    l->base.forward = ailayer_dense_forward_Q;
                 }
 
                 break;
@@ -72,16 +66,8 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
 
                 layers = ailayer_conv2d_f32_default(l, layers);
 
-                switch (conf->quantization) {
-                    case Q31: {
-                        l->base.forward = ailayer_conv2d_forward_Q31;
-                        break;
-                    }
-                    case Q7: {
-                        l->base.forward = ailayer_conv2d_forward_Q7;
-                        break;
-                    }
-                    default: ;
+                if (conf->quantization) {
+                    l->base.forward = ailayer_conv2d_forward_Q;
                 }
 
                 break;
@@ -120,7 +106,7 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
                 break;
             }
             case UNKNOWN_LAYER: break;
-            default: return false;
+            default: return NULL;
         }
 
         if (current.type == MAXPOOL2D
@@ -203,6 +189,10 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
     conf->y->data = mem_calloc(output_size, sizeof(float));
 
     aialgo_compile_model(model);
+
+    if (conf->quantization != F32) {
+        init_quantize(conf, model);
+    }
 
     uint32_t parameter_memory_size = aialgo_sizeof_parameter_memory(model);
     void *parameter_memory = mem_calloc(parameter_memory_size, sizeof(void));
@@ -358,6 +348,13 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
     LOG_INFO("Inizio Valutazione con: test.csv");
     run_inference(conf, model, f_x_test_set, f_y_test_set, conf->sample_number.test);
 
+    if (conf->quantization != F32 && !conf->already_quantized) {
+        LOG_INFO("Finalizing quantization");
+        quantize(model);
+        conf->already_quantized = true;
+        LOG_INFO("Quantization finalized");
+    }
+
     CLOSE_ALL_FILES(f_x_train_set, f_y_train_set, f_x_validation_set, f_y_validation_set, f_x_test_set, f_y_test_set);
 
     LOG_INFO("Fine Training");
@@ -374,36 +371,4 @@ void run_evaluation(aiconfiguration_t *conf, aimodel_t *model) {
     run_inference(conf, model, f_x_unvisioned_set, f_y_unvisioned_set, conf->sample_number.unvisioned);
 
     CLOSE_ALL_FILES(f_x_unvisioned_set, f_y_unvisioned_set);
-}
-
-bool calc_scale_and_zero_point(Quantization qType, const aitensor_t *t, void *qParam) {
-    if (!t || !t->data || !qParam) return false;
-
-    float min_val = FLT_MAX;
-    float max_val = -FLT_MAX;
-
-    float *data = (float *) t->data;
-    uint32_t size = aimath_tensor_elements(t);
-
-    for (int i = 0; i < size; i++) {
-        float v = data[i];
-        if (v < min_val) min_val = v;
-        if (v > max_val) max_val = v;
-    }
-
-    switch (qType) {
-        case Q31: {
-            aimath_q31_params_t *q = (aimath_q31_params_t *) qParam;
-            aimath_q31_calc_q_params_from_f32(min_val, max_val, q);
-            break;
-        }
-        case Q7: {
-            aimath_q7_params_t *q = (aimath_q7_params_t *) qParam;
-            aimath_q7_calc_q_params_from_f32(min_val, max_val, q);
-            break;
-        }
-        default: return false;
-    }
-
-    return true;
 }
