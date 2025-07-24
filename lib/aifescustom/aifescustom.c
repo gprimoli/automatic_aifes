@@ -41,7 +41,17 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
                 layers = ailayer_dense_f32_default(l, layers);
 
                 if (conf->quantization) {
-                    l->base.forward = ailayer_dense_forward_Q;
+                    switch (conf->quantization) {
+                        case Q31: {
+                            l->base.forward = ailayer_dense_forward_Q31;
+                            break;
+                        }
+                        case Q7: {
+                            l->base.forward = ailayer_dense_forward_Q7;
+                            break;
+                        }
+                        default: break;
+                    }
                 }
 
                 break;
@@ -66,8 +76,19 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
 
                 layers = ailayer_conv2d_f32_default(l, layers);
 
+
                 if (conf->quantization) {
-                    l->base.forward = ailayer_conv2d_forward_Q;
+                    switch (conf->quantization) {
+                        case Q31: {
+                            l->base.forward = ailayer_conv2d_forward_Q31;
+                            break;
+                        }
+                        case Q7: {
+                            l->base.forward = ailayer_conv2d_forward_Q7;
+                            break;
+                        }
+                        default: break;
+                    }
                 }
 
                 break;
@@ -190,10 +211,6 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
 
     aialgo_compile_model(model);
 
-    if (conf->quantization != F32) {
-        init_quantize(conf, model);
-    }
-
     uint32_t parameter_memory_size = aialgo_sizeof_parameter_memory(model);
     void *parameter_memory = mem_calloc(parameter_memory_size, sizeof(void));
 
@@ -229,6 +246,10 @@ aiopti_t *build_model(aiconfiguration_t *conf, aimodel_t *model) {
     aialgo_schedule_training_memory(model, optimizer, memory_ptr, memory_size);
 
     aialgo_init_model_for_training(model, optimizer);
+
+    if (conf->quantization != F32) {
+        init_quantize(conf, model);
+    }
 
     return optimizer;
 }
@@ -350,7 +371,7 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
 
     if (conf->quantization != F32 && !conf->already_quantized) {
         LOG_INFO("Finalizing quantization");
-        quantize(model);
+        quantize(conf, model);
         conf->already_quantized = true;
         LOG_INFO("Quantization finalized");
     }

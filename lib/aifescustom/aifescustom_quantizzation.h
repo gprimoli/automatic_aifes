@@ -13,25 +13,26 @@ extern bool is_quantizate;
 
 #define CLAMP(x, low, high) ((x) < (low) ? (low) : ((x) > (high) ? (high) : (x)))
 
-typedef struct qat_params {
-    void *q_params;
-    Quantization q_type;
-    bool is_tensor_float;
-} qat_params_t;
-
 static bool init_qat_params(aitensor_t *tensor, Quantization qType) {
     if (!tensor) return false;
 
-    qat_params_t *qat_params = mem_calloc(1, sizeof(qat_params_t));
-    qat_params->q_type = qType;
-    qat_params->q_params = NULL;
-    qat_params->is_tensor_float = true;
-
-    tensor->qat_params = qat_params;
+    void *q = NULL;
+    switch (qType) {
+        case Q31: {
+            q = (aimath_q31_params_t *) mem_calloc(1, sizeof(aimath_q31_params_t));
+            break;
+        }
+        case Q7: {
+            q = (aimath_q7_params_t *) mem_calloc(1, sizeof(aimath_q7_params_t));
+            break;
+        }
+        default:
+            SAFE_EXIT_FAILURE("Errore quantizzazione: tipo non supportato");
+    }
+    tensor->tensor_params = q;
     return true;
 }
 
-/*Funzioni che uso all'inizio*/
 static void init_quantize(aiconfiguration_t *conf, aimodel_t *model) {
     ailayer_t *layer = model->input_layer;
 
@@ -68,23 +69,20 @@ static void init_quantize(aiconfiguration_t *conf, aimodel_t *model) {
     }
 }
 
-/*--------------------------*/
-
 /*Funzioni che uso alla fine*/
-static bool aimath_quantize_tensor(aitensor_t *t) {
-    if (!t || !t->data || !t->qat_params) return false;
-    qat_params_t *qat_params = (qat_params_t *) t->qat_params;
+static bool aimath_quantize_tensor(aitensor_t *t, aiconfiguration_t *conf) {
+    if (!t || !t->data || !t->tensor_params) return false;
     float *data = (float *) t->data;
 
     for (int i = 0; i < aimath_tensor_elements(t); i++) {
-        switch (qat_params->q_type) {
+        switch (conf->quantization) {
             case Q31: {
-                aimath_q31_params_t *q = (aimath_q31_params_t *) qat_params->q_params;
+                aimath_q31_params_t *q = (aimath_q31_params_t *) t->tensor_params;
                 data[i] = (int32_t) FLOAT_TO_Q31(data[i], q->shift, q->zero_point);
                 break;
             }
             case Q7: {
-                aimath_q7_params_t *q = (aimath_q7_params_t *) qat_params->q_params;
+                aimath_q7_params_t *q = (aimath_q7_params_t *) t->tensor_params;
                 data[i] = (int8_t) FLOAT_TO_Q7(data[i], q->shift, q->zero_point);
                 break;
             }
@@ -93,40 +91,40 @@ static bool aimath_quantize_tensor(aitensor_t *t) {
         }
     }
 
-    qat_params->is_tensor_float = false;
     return true;
 }
 
-static void quantize(aimodel_t *model) {
-    is_quantizate = true;
+static void quantize(aiconfiguration_t *conf, aimodel_t *model) {
     ailayer_t *layer = model->input_layer;
     for (int i = 1; i < model->layer_count; i++) {
         layer = layer->output_layer;
 
         if (strcmp(layer->layer_type->name, "Dense") == 0) {
             ailayer_dense_f32_t *layer_cast = (ailayer_dense_f32_t *) layer;
-            if (!aimath_quantize_tensor(&(layer_cast->weights))) {
+            if (!aimath_quantize_tensor(&(layer_cast->weights), conf)) {
                 SAFE_EXIT_FAILURE("Errore quantizzazione");
             }
-            if (!aimath_quantize_tensor(&(layer_cast->bias))) {
+            if (!aimath_quantize_tensor(&(layer_cast->bias), conf)) {
                 SAFE_EXIT_FAILURE("Errore quantizzazione");
             }
         } else if (strcmp(layer->layer_type->name, "Conv2D") == 0) {
             ailayer_conv2d_f32_t *layer_cast = (ailayer_conv2d_f32_t *) layer;
-            if (!aimath_quantize_tensor(&(layer_cast->weights))) {
+            if (!aimath_quantize_tensor(&(layer_cast->weights), conf)) {
                 SAFE_EXIT_FAILURE("Errore quantizzazione");
             }
-            if (!aimath_quantize_tensor(&(layer_cast->bias))) {
+            if (!aimath_quantize_tensor(&(layer_cast->bias), conf)) {
                 SAFE_EXIT_FAILURE("Errore quantizzazione");
             }
         }
     }
+
+    is_quantizate = true;
 }
 
 /*--------------------------*/
 
-static bool update_qat_params(const aitensor_t *t) {
-    if (!t || !t->data || !(t->qat_params) || !((qat_params_t *) t->qat_params)->is_tensor_float) return false;
+static bool update_qat_params(Quantization qtype, const aitensor_t *t) {
+    if (!t || !t->data || !(t->tensor_params)) return false;
 
     float min_val = FLT_MAX;
     float max_val = -FLT_MAX;
@@ -140,23 +138,14 @@ static bool update_qat_params(const aitensor_t *t) {
         if (v > max_val) max_val = v;
     }
 
-    qat_params_t *qat_params = t->qat_params;
-    switch (qat_params->q_type) {
+    switch (qtype) {
         case Q31: {
-            if (!qat_params->q_params) {
-                qat_params->q_params = mem_calloc(1, sizeof(aimath_q31_params_t));
-            }
-
-            aimath_q31_params_t *q = (aimath_q31_params_t *) qat_params->q_params;
+            aimath_q31_params_t *q = (aimath_q31_params_t *) t->tensor_params;
             aimath_q31_calc_q_params_from_f32(min_val, max_val, q);
             break;
         }
         case Q7: {
-            if (!qat_params->q_params) {
-                qat_params->q_params = mem_calloc(1, sizeof(aimath_q7_params_t));
-            }
-
-            aimath_q7_params_t *q = (aimath_q7_params_t *) qat_params->q_params;
+            aimath_q7_params_t *q = (aimath_q7_params_t *) t->tensor_params;
             aimath_q7_calc_q_params_from_f32(min_val, max_val, q);
             break;
         }
@@ -167,23 +156,23 @@ static bool update_qat_params(const aitensor_t *t) {
 }
 
 
-static float get_quantize_value(float value, const qat_params_t *qat_params, int flag) {
+static float get_quantize_value(Quantization qtype, float value, void *qat_params, int flag) {
     if (!qat_params) return value;
     //0 quantizzo e dequantizzo
     //1 quantizzo
     //1 dequantizzo
     switch (flag) {
         case 0: {
-            switch (qat_params->q_type) {
+            switch (qtype) {
                 case Q31: {
-                    aimath_q31_params_t *q = (aimath_q31_params_t *) qat_params->q_params;
+                    aimath_q31_params_t *q = (aimath_q31_params_t *) qat_params;
 
                     const int32_t quantized = FLOAT_TO_Q31(value, q->shift, q->zero_point);
                     return Q31_TO_FLOAT(quantized, q->shift, q->zero_point);
                     break;
                 }
                 case Q7: {
-                    aimath_q7_params_t *q = (aimath_q7_params_t *) qat_params->q_params;
+                    aimath_q7_params_t *q = (aimath_q7_params_t *) qat_params;
 
                     const int8_t quantized = FLOAT_TO_Q7(value, q->shift, q->zero_point);
                     return Q7_TO_FLOAT(quantized, q->shift, q->zero_point);
@@ -194,14 +183,14 @@ static float get_quantize_value(float value, const qat_params_t *qat_params, int
             break;
         }
         case 1: {
-            switch (qat_params->q_type) {
+            switch (qtype) {
                 case Q31: {
-                    aimath_q31_params_t *q = (aimath_q31_params_t *) qat_params->q_params;
+                    aimath_q31_params_t *q = (aimath_q31_params_t *) qat_params;
                     return FLOAT_TO_Q31(value, q->shift, q->zero_point);
                     break;
                 }
                 case Q7: {
-                    aimath_q7_params_t *q = (aimath_q7_params_t *) qat_params->q_params;
+                    aimath_q7_params_t *q = (aimath_q7_params_t *) qat_params;
                     return FLOAT_TO_Q7(value, q->shift, q->zero_point);
                     break;
                 }
@@ -210,14 +199,14 @@ static float get_quantize_value(float value, const qat_params_t *qat_params, int
             break;
         }
         case 2: {
-            switch (qat_params->q_type) {
+            switch (qtype) {
                 case Q31: {
-                    aimath_q31_params_t *q = (aimath_q31_params_t *) qat_params->q_params;
+                    aimath_q31_params_t *q = (aimath_q31_params_t *) qat_params;
                     return Q31_TO_FLOAT(value, q->shift, q->zero_point);
                     break;
                 }
                 case Q7: {
-                    aimath_q7_params_t *q = (aimath_q7_params_t *) qat_params->q_params;
+                    aimath_q7_params_t *q = (aimath_q7_params_t *) qat_params;
                     return Q7_TO_FLOAT(value, q->shift, q->zero_point);
                     break;
                 }
@@ -232,7 +221,7 @@ static float get_quantize_value(float value, const qat_params_t *qat_params, int
 
 /*-------------------------- Dense --------------------------*/
 
-static void aimath_f32_default_linear_quantized(const aitensor_t *a, const aitensor_t *b,
+static void aimath_f32_default_linear_quantized(Quantization Q, const aitensor_t *a, const aitensor_t *b,
                                                 const aitensor_t *c,
                                                 aitensor_t *result, bool flag) {
     uint16_t i, j, k;
@@ -243,9 +232,9 @@ static void aimath_f32_default_linear_quantized(const aitensor_t *a, const aiten
     float *c_data = c != NULL ? (float *) c->data : NULL;
     float *result_data = (float *) result->data;
 
-    qat_params_t *qat_params_a = (qat_params_t *) a->qat_params;
-    qat_params_t *qat_params_b = (qat_params_t *) b->qat_params;
-    qat_params_t *qat_params_c = c && c->qat_params ? (qat_params_t *) c->qat_params : NULL;
+    void *qat_params_a = a->tensor_params;
+    void *qat_params_b = b->tensor_params;
+    void *qat_params_c = c && c->tensor_params ? c->tensor_params : NULL;
 
 
     for (i = 0; i < a->shape[0]; i++) {
@@ -256,11 +245,11 @@ static void aimath_f32_default_linear_quantized(const aitensor_t *a, const aiten
                 float b_val = b_data[k * b->shape[1] + j];
 
                 if (!is_quantizate) {
-                    a_val = get_quantize_value(a_val, qat_params_a, 0); //q+d
-                    b_val = get_quantize_value(b_val, qat_params_b, 0); //q+d
+                    a_val = get_quantize_value(Q, a_val, qat_params_a, 0); //q+d
+                    b_val = get_quantize_value(Q, b_val, qat_params_b, 0); //q+d
                 } else if (flag) {
                     // a_val = get_quantize_value(a_val, qat_params_a, 1); //q
-                    b_val = get_quantize_value(b_val, qat_params_b, 2); //d
+                    b_val = get_quantize_value(Q, b_val, qat_params_b, 2); //d
                 }
 
                 sum += a_val * b_val;
@@ -269,9 +258,9 @@ static void aimath_f32_default_linear_quantized(const aitensor_t *a, const aiten
                 // Bias add
                 float c_val = c_data[j];
                 if (!is_quantizate) {
-                    c_val = get_quantize_value(c_val, qat_params_c, 0); //q+d
+                    c_val = get_quantize_value(Q, c_val, qat_params_c, 0); //q+d
                 } else {
-                    c_val = get_quantize_value(c_val, qat_params_c, 2); //d
+                    c_val = get_quantize_value(Q, c_val, qat_params_c, 2); //d
                 }
                 sum += c_val;
             }
@@ -280,7 +269,7 @@ static void aimath_f32_default_linear_quantized(const aitensor_t *a, const aiten
     }
 }
 
-static void ailayer_dense_forward_Q(ailayer_t *self) {
+static void ailayer_dense_forward_Q31(ailayer_t *self) {
     aitensor_t *x_in = &(self->input_layer->result);
     aitensor_t *x_out = &(self->result);
     ailayer_dense_t *layer = (ailayer_dense_t *) (self->layer_configuration);
@@ -288,16 +277,39 @@ static void ailayer_dense_forward_Q(ailayer_t *self) {
     aitensor_t *bias = &(layer->bias);
 
     if (!is_quantizate) {
-        update_qat_params(weights);
-        update_qat_params(bias);
-        update_qat_params(x_in);
-        aimath_f32_default_linear_quantized(x_in, weights, bias, x_out, false);
+        update_qat_params(Q31, weights);
+        update_qat_params(Q31, bias);
+        update_qat_params(Q31, x_in);
+        aimath_f32_default_linear_quantized(Q31, x_in, weights, bias, x_out, false);
         // x_in deve essere quantizzato e dequantizzato
     } else if (strcmp(self->input_layer->layer_type->name, "Input") == 0) {
-        update_qat_params(x_in);
-        aimath_f32_default_linear_quantized(x_in, weights, bias, x_out, true);
+        update_qat_params(Q31, x_in);
+        aimath_f32_default_linear_quantized(Q31, x_in, weights, bias, x_out, true);
     } else {
-        aimath_f32_default_linear_quantized(x_in, weights, bias, x_out, false);
+        aimath_f32_default_linear_quantized(Q31, x_in, weights, bias, x_out, false);
+    }
+
+    return;
+}
+
+static void ailayer_dense_forward_Q7(ailayer_t *self) {
+    aitensor_t *x_in = &(self->input_layer->result);
+    aitensor_t *x_out = &(self->result);
+    ailayer_dense_t *layer = (ailayer_dense_t *) (self->layer_configuration);
+    aitensor_t *weights = &(layer->weights);
+    aitensor_t *bias = &(layer->bias);
+
+    if (!is_quantizate) {
+        update_qat_params(Q7, weights);
+        update_qat_params(Q7, bias);
+        update_qat_params(Q7, x_in);
+        aimath_f32_default_linear_quantized(Q7, x_in, weights, bias, x_out, false);
+        // x_in deve essere quantizzato e dequantizzato
+    } else if (strcmp(self->input_layer->layer_type->name, "Input") == 0) {
+        update_qat_params(Q7, x_in);
+        aimath_f32_default_linear_quantized(Q7, x_in, weights, bias, x_out, true);
+    } else {
+        aimath_f32_default_linear_quantized(Q7, x_in, weights, bias, x_out, false);
     }
 
     return;
@@ -308,6 +320,7 @@ static void ailayer_dense_forward_Q(ailayer_t *self) {
 
 
 static void aimath_f32_default_conv2d_add_quantized(
+    Quantization q,
     const aitensor_t *input,
     const uint16_t stride[2], // [s_h, s_w]
     const uint16_t dilation[2], // [d_h, d_w]
@@ -411,8 +424,8 @@ static void aimath_f32_default_conv2d_add_quantized(
     uint32_t idx_h, idx_w; // Auxilary index variables
 
 
-    qat_params_t *qat_params_input = (qat_params_t *) input->qat_params;
-    qat_params_t *qat_params_kernel = (qat_params_t *) kernel->qat_params;
+    void *qat_params_input = input->tensor_params;
+    void *qat_params_kernel = kernel->tensor_params;
 
     for (y_h_idx = 0; y_h_idx < out_h; y_h_idx++) {
         for (y_w_idx = 0; y_w_idx < out_w; y_w_idx++) {
@@ -432,11 +445,11 @@ static void aimath_f32_default_conv2d_add_quantized(
                             float b_val = kernel_data[k_1 * k_h_idx + k_2 * k_w_idx + k_3];
 
                             if (!is_quantizate) {
-                                a_val = get_quantize_value(a_val, qat_params_input, 0); //q+d
-                                b_val = get_quantize_value(b_val, qat_params_kernel, 0); //q+d
+                                a_val = get_quantize_value(q, a_val, qat_params_input, 0); //q+d
+                                b_val = get_quantize_value(q, b_val, qat_params_kernel, 0); //q+d
                             } else if (flag) {
                                 // a_val = get_quantize_value(a_val, qat_params_input, 1); //q
-                                b_val = get_quantize_value(b_val, qat_params_kernel, 2); //d
+                                b_val = get_quantize_value(q, b_val, qat_params_kernel, 2); //d
                             }
 
                             sum += a_val * b_val;
@@ -459,11 +472,11 @@ static void aimath_f32_default_conv2d_add_quantized(
                             float b_val = kernel_data[k_1 * (k_h - k_h_idx - 1) + k_2 * (k_w - k_w_idx - 1) + k_3];
 
                             if (!is_quantizate) {
-                                a_val = get_quantize_value(a_val, qat_params_input, 0); //q+d
-                                b_val = get_quantize_value(b_val, qat_params_kernel, 0); //q+d
+                                a_val = get_quantize_value(q, a_val, qat_params_input, 0); //q+d
+                                b_val = get_quantize_value(q, b_val, qat_params_kernel, 0); //q+d
                             } else if (flag) {
-                                a_val = get_quantize_value(a_val, qat_params_input, 1); //q
-                                b_val = get_quantize_value(b_val, qat_params_kernel, 2); //d
+                                a_val = get_quantize_value(q, a_val, qat_params_input, 1); //q
+                                b_val = get_quantize_value(q, b_val, qat_params_kernel, 2); //d
                             }
                             sum += a_val * b_val;
                         }
@@ -481,6 +494,7 @@ static void aimath_f32_default_conv2d_add_quantized(
 
 
 static void aimath_f32_default_conv2d_fwd_quantized(
+    Quantization q,
     const aitensor_t *input,
     const uint16_t stride[2], // [s_h, s_w]
     const uint16_t dilation[2], // [d_h, d_w]
@@ -552,7 +566,7 @@ static void aimath_f32_default_conv2d_fwd_quantized(
     // Init result with zeros
     aimath_f32_default_init_zeros(output);
 
-    qat_params_t *qat_params_bias = (qat_params_t *) bias->qat_params;
+    void *qat_params_bias = bias->tensor_params;
 
     // Iterate over all samples
     for (n_idx = 0; n_idx < N; n_idx++) {
@@ -570,15 +584,16 @@ static void aimath_f32_default_conv2d_fwd_quantized(
                     // Add the bias only when the last channel is reached
                     bias_ptr = (float *) (bias->data) + f_idx;
                     if (!is_quantizate) {
-                        *bias_ptr = get_quantize_value(*bias_ptr, qat_params_bias, 0); //q+d
+                        *bias_ptr = get_quantize_value(q, *bias_ptr, qat_params_bias, 0); //q+d
                     } else {
-                        *bias_ptr = get_quantize_value(*bias_ptr, qat_params_bias, 2); //d
+                        *bias_ptr = get_quantize_value(q, *bias_ptr, qat_params_bias, 2); //d
                     }
                 } else {
                     bias_ptr = 0;
                 }
 
-                aimath_f32_default_conv2d_add_quantized(input,
+                aimath_f32_default_conv2d_add_quantized(q,
+                                                        input,
                                                         stride,
                                                         dilation,
                                                         fwd_padding,
@@ -594,7 +609,7 @@ static void aimath_f32_default_conv2d_fwd_quantized(
     }
 }
 
-static void ailayer_conv2d_forward_Q(ailayer_t *self) {
+static void ailayer_conv2d_forward_Q31(ailayer_t *self) {
     aitensor_t *x_in = &(self->input_layer->result);
     aitensor_t *x_out = &(self->result);
     ailayer_conv2d_t *layer = (ailayer_conv2d_t *) (self->layer_configuration);
@@ -602,11 +617,12 @@ static void ailayer_conv2d_forward_Q(ailayer_t *self) {
     aitensor_t *bias = &layer->bias;
 
     if (!is_quantizate) {
-        update_qat_params(weights);
-        update_qat_params(bias);
-        update_qat_params(x_in);
+        update_qat_params(Q31, weights);
+        update_qat_params(Q31, bias);
+        update_qat_params(Q31, x_in);
 
-        aimath_f32_default_conv2d_fwd_quantized(x_in,
+        aimath_f32_default_conv2d_fwd_quantized(Q31,
+                                                x_in,
                                                 layer->stride,
                                                 layer->dilation,
                                                 layer->padding,
@@ -616,8 +632,8 @@ static void ailayer_conv2d_forward_Q(ailayer_t *self) {
                                                 0,
                                                 x_out, false);
     } else if (strcmp(self->input_layer->layer_type->name, "Input") == 0) {
-        update_qat_params(x_in);
-        aimath_f32_default_conv2d_fwd_quantized(x_in,
+        update_qat_params(Q31, x_in);
+        aimath_f32_default_conv2d_fwd_quantized(Q31, x_in,
                                                 layer->stride,
                                                 layer->dilation,
                                                 layer->padding,
@@ -627,7 +643,7 @@ static void ailayer_conv2d_forward_Q(ailayer_t *self) {
                                                 0,
                                                 x_out, true);
     } else {
-        aimath_f32_default_conv2d_fwd_quantized(x_in,
+        aimath_f32_default_conv2d_fwd_quantized(Q31, x_in,
                                                 layer->stride,
                                                 layer->dilation,
                                                 layer->padding,
@@ -642,7 +658,54 @@ static void ailayer_conv2d_forward_Q(ailayer_t *self) {
     return;
 }
 
+static void ailayer_conv2d_forward_Q7(ailayer_t *self) {
+    aitensor_t *x_in = &(self->input_layer->result);
+    aitensor_t *x_out = &(self->result);
+    ailayer_conv2d_t *layer = (ailayer_conv2d_t *) (self->layer_configuration);
+    aitensor_t *weights = &layer->weights;
+    aitensor_t *bias = &layer->bias;
 
+    if (!is_quantizate) {
+        update_qat_params(Q7, weights);
+        update_qat_params(Q7, bias);
+        update_qat_params(Q7, x_in);
+
+        aimath_f32_default_conv2d_fwd_quantized(Q7,
+                                                x_in,
+                                                layer->stride,
+                                                layer->dilation,
+                                                layer->padding,
+                                                weights,
+                                                bias,
+                                                layer->channel_axis,
+                                                0,
+                                                x_out, false);
+    } else if (strcmp(self->input_layer->layer_type->name, "Input") == 0) {
+        update_qat_params(Q7, x_in);
+        aimath_f32_default_conv2d_fwd_quantized(Q7, x_in,
+                                                layer->stride,
+                                                layer->dilation,
+                                                layer->padding,
+                                                weights,
+                                                bias,
+                                                layer->channel_axis,
+                                                0,
+                                                x_out, true);
+    } else {
+        aimath_f32_default_conv2d_fwd_quantized(Q7, x_in,
+                                                layer->stride,
+                                                layer->dilation,
+                                                layer->padding,
+                                                weights,
+                                                bias,
+                                                layer->channel_axis,
+                                                0,
+                                                x_out, false);
+    }
+
+
+    return;
+}
 /*-------------------------------------------------------------*/
 
 #endif //AIFESqat_params_INTERNAL_H
