@@ -4,8 +4,8 @@ project(automatic_aifes C)
 set(CMAKE_C_STANDARD 11)
 
 set(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-set(AIFES_PATH "C:/Users/play_/CLionProjects/AIfES_for_Arduino/src")
-set(INI_PATH "C:/Users/play_/CLionProjects/inih-r60")
+set(AIFES_PATH "C:/Users/Lab/CLionProjects/AIfES/src")
+set(INI_PATH "C:/Users/Lab/CLionProjects/inih-r60")
 set(LIB_PATH "${PROJECT_ROOT}/lib")
 set(MAIN_FILE "mainDinamic.c")
 
