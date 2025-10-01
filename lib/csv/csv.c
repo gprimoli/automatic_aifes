@@ -8,15 +8,32 @@
 
 bool open_csv(FILE **file, const char *base, const char *name, const char *mode) {
     char path[BUF_MIN];
-    snprintf(path, sizeof(path), "%s%c%s", base, DIR_SEPARATOR, name);
+    int n = snprintf(path, sizeof(path), "%s%c%s", base, DIR_SEPARATOR, name);
+    if (n < 0 || (size_t) n >= sizeof(path)) return false;
+
     *file = fopen(path, mode);
     return *file != NULL;
+}
+
+
+bool open_dataset(FILE **files, const char *base, const char *name, const char *mode) {
+    char tmp[BUF_MIN];
+    int n;
+    n = snprintf(tmp, sizeof(tmp), "x_%s", name);
+    if (n < 0 || (size_t) n >= sizeof(tmp)) return false;
+    bool a = open_csv(&files[0], base, tmp, mode);
+
+    n = snprintf(tmp, sizeof(tmp), "y_%s", name);
+    if (n < 0 || (size_t) n >= sizeof(tmp)) return false;
+    bool b = open_csv(&files[1], base, tmp, mode);
+
+    return a && b;
 }
 
 bool csv_read_one(float *out, FILE *f) {
     if (!f || !out) return false;
 
-    char value_buf[64];
+    char value_buf[64] = {0};
     int buf_pos = 0;
     int c;
 
@@ -67,7 +84,7 @@ bool csv_write(const float arr[], uint32_t len, FILE *f) {
     if (!arr || len <= 0 || !f) return false;
 
     for (int i = 0; i < len; i++) {
-        fprintf(f, "%.7f", arr[i]);
+        fprintf(f, "%.9g", arr[i]);
 
         if (i < len - 1) {
             fprintf(f, ",");

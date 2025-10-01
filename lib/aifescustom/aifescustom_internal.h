@@ -15,9 +15,7 @@ int argmax(aitensor_t *aitensor) {
     return ixd;
 }
 
-static bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *conf, aimodel_t *model, float *loss_result,
-                                           float *accuracy_result) {
-    float loss = 0.0f;
+static bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *conf, aimodel_t *model, float *loss, float *accuracy) {
     const aitensor_t *input_tensor = conf->x;
     const aitensor_t *target_tensor = conf->y;
     const uint16_t batch_size = input_tensor->shape[0];
@@ -58,9 +56,7 @@ static bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *conf, aimodel_t *m
     aialgo_set_training_mode_model(model, FALSE);
     aialgo_set_batch_mode_model(model, FALSE);
 
-    float tmp_loss = 0;
-    float tmp_acc = 0;
-
+    float tmp_loss;
     for (uint32_t i = 0; i < num_batches; i++) {
         input_batch.data = input_tensor->data + i * batch_slice_size * input_multiplier;
         target_batch.data = target_tensor->data + i * batch_slice_size * target_multiplier;
@@ -77,24 +73,17 @@ static bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *conf, aimodel_t *m
         }
 
         if (pred_label == true_label) {
-            tmp_acc++;
+            (*accuracy) += 1;
         }
 
-        model->loss->calc_loss(model->loss, &target_batch, &loss);
-        tmp_loss += loss;
+        model->loss->calc_loss(model->loss, &target_batch, &tmp_loss);
+        *loss += tmp_loss;
     }
-
-    tmp_loss = tmp_loss / (float) num_batches;
-    tmp_acc = tmp_acc / (float) num_batches;
-
-    const float alpha = 0.1f; //Exponential Moving Average (EMA)
-    *loss_result = (*loss_result != 0) ? (alpha * tmp_loss + (1.0f - alpha) * (*loss_result)) : tmp_loss;
-    *accuracy_result = *accuracy_result != 0 ? (tmp_acc + *accuracy_result) / 2 : tmp_acc;
 
     return true;
 }
 
-static void run_inference(aiconfiguration_t *conf, aimodel_t *model, FILE *f_x, FILE *f_y, uint32_t sample_number, float *acc, float *loss) {
+static void run_inference(aiconfiguration_t *conf, aimodel_t *model, FILE *f[2], uint32_t sample_number, float *acc, float *loss) {
     uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
                                   ? conf->batch_size * conf->input_shape[1]
                                   : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape
@@ -105,7 +94,7 @@ static void run_inference(aiconfiguration_t *conf, aimodel_t *model, FILE *f_x, 
 
     *loss = *acc = 0.0f;
     for (int batch = 0; batch < batch_test; batch++) {
-        if (!csv_read(conf->x->data, input_elements, f_x) || !csv_read(conf->y->data, output_elements, f_y)) {
+        if (!csv_read(conf->x->data, input_elements, f[0]) || !csv_read(conf->y->data, output_elements, f[1])) {
             SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
         }
 
@@ -114,8 +103,11 @@ static void run_inference(aiconfiguration_t *conf, aimodel_t *model, FILE *f_x, 
         }
     }
 
+    *acc = *acc / (float) sample_number; /*TODO: Possibile errore se sample_number non è multiplo di batch_size*/
+    *loss = *loss / (float) sample_number;
+
     LOG_INFO("Inference Loss: %.5f\tAccuracy: %.5f", *loss, *acc);
-    RESET_ALL_FILES(f_x, f_y);
+    RESET_ALL_FILES(f[0], f[1]);
 }
 
 #endif //AIFESCUSTOM_INTERNAL_H

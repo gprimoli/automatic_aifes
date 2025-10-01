@@ -309,7 +309,6 @@ void load_model(aiconfiguration_t *conf, aimodel_t *model) {
 
 void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer) {
     LOG_INFO("Inizio Training");
-    float acc = 0, loss = 0;
 
     uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
                                   ? conf->batch_size * conf->input_shape[1]
@@ -319,32 +318,29 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
 
     uint32_t batch_train = conf->sample_number.train / conf->batch_size;
 
+    FILE *f_train_set[2] = {0};
+    FILE *f_validation_set[2] = {0};
 
-    FILE *f_x_train_set, *f_y_train_set;
-    FILE *f_x_validation_set, *f_y_validation_set;
-    FILE *f_x_test_set, *f_y_test_set;
-
-    if (!open_csv(&f_x_train_set, conf->basedir, "x_train.csv", "r")
-        || !open_csv(&f_y_train_set, conf->basedir, "y_train.csv", "r")
-        || !open_csv(&f_x_validation_set, conf->basedir, "x_validation.csv", "r")
-        || !open_csv(&f_y_validation_set, conf->basedir, "y_validation.csv", "r")
-        || !open_csv(&f_x_test_set, conf->basedir, "x_test.csv", "r")
-        || !open_csv(&f_y_test_set, conf->basedir, "y_test.csv", "r")) {
-        SAFE_EXIT_FAILURE("Errore apertura file CSV");
+    if (!open_dataset(f_train_set, conf->basedir, "train.csv", "r")) {
+        SAFE_EXIT_FAILURE("Errore apertura train");
+    }
+    if (!open_dataset(f_validation_set, conf->basedir, "validation.csv", "r")) {
+        SAFE_EXIT_FAILURE("Errore apertura validation");
     }
 
     for (int epoch = 0; epoch < conf->epochs; epoch++) {
+        float acc = 0, loss = 0;
+
         LOG_INFO("Epoch %d/%d", epoch + 1, conf->epochs);
         for (int batch = 0; batch < batch_train; batch++) {
-            if (!csv_read(conf->x->data, input_elements, f_x_train_set) ||
-                !csv_read(conf->y->data, output_elements, f_y_train_set)) {
-                SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
+            if (!csv_read(conf->x->data, input_elements, f_train_set[0]) ||
+                !csv_read(conf->y->data, output_elements, f_train_set[1])) {
+                SAFE_EXIT_FAILURE("Errore lettura batch training");
             }
 
             aialgo_train_model(model, conf->x, conf->y, optimizer, conf->batch_size);
         }
 
-        RESET_ALL_FILES(f_x_train_set, f_y_train_set);
 
         if (conf->pruning_aware_training && conf->pruning > 0) {
             const uint8_t pruning_steps = 5;
@@ -360,19 +356,19 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
         }
 
         LOG_INFO("Inizio Valutazione con: validation.csv");
-        run_inference(conf, model, f_x_validation_set, f_y_validation_set, conf->sample_number.validation, &acc, &loss);
+        run_inference(conf, model, f_validation_set, conf->sample_number.validation, &acc, &loss);
+
+        if (conf->save && acc > conf->best_acc) {
+            save_model(conf, model);
+            conf->best_acc = acc;
+        }
+
+        RESET_ALL_FILES(f_train_set[0], f_train_set[1], f_validation_set[0], f_validation_set[1]);
     }
 
     if (conf->pruning > 0) {
         prune_global(model, conf->pruning / 100.0f);
     }
-
-    LOG_INFO("Inizio Valutazione con: test.csv");
-    run_inference(conf, model, f_x_test_set, f_y_test_set, conf->sample_number.test, &acc, &loss);
-    if (conf->save && acc > conf->best_acc) {
-        save_model(conf, model);
-    }
-
 
     if (conf->quantization != F32 && !conf->already_quantized) {
         LOG_INFO("Finalizing quantization");
@@ -381,25 +377,22 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
         LOG_INFO("Quantization finalized");
     }
 
-    CLOSE_ALL_FILES(f_x_train_set, f_y_train_set, f_x_validation_set, f_y_validation_set, f_x_test_set, f_y_test_set);
+    CLOSE_ALL_FILES(f_train_set[0], f_train_set[1], f_validation_set[0], f_validation_set[1]);
 
     LOG_INFO("Fine Training");
 }
 
-void run_evaluation(aiconfiguration_t *conf, aimodel_t *model) {
-    FILE *f_x_unvisioned_set, *f_y_unvisioned_set;
+void run_evaluation(aiconfiguration_t *conf, aimodel_t *model, char *dataset_name) {
+    FILE *f_set[2];
     float acc = 0, loss = 0;
 
-    if (!open_csv(&f_x_unvisioned_set, conf->basedir, "x_unvisioned.csv", "r")) {
-        SAFE_EXIT_FAILURE("Errore apertura x_unvisioned_set CSV");
-    }
-    if (!open_csv(&f_y_unvisioned_set, conf->basedir, "y_unvisioned.csv", "r")) {
-        SAFE_EXIT_FAILURE("Errore apertura y_unvisioned_set CSV");
+    if (!open_dataset(f_set, conf->basedir, dataset_name, "r")) {
+        SAFE_EXIT_FAILURE("Errore apertura %s", dataset_name);
     }
 
-    LOG_INFO("Inizio Valutazione con: unvisioned.csv");
+    LOG_INFO("Inizio Valutazione con: %s", dataset_name);
 
-    run_inference(conf, model, f_x_unvisioned_set, f_y_unvisioned_set, conf->sample_number.unvisioned, &acc, &loss);
+    run_inference(conf, model, f_set, conf->sample_number.unvisioned, &acc, &loss);
 
-    CLOSE_ALL_FILES(f_x_unvisioned_set, f_y_unvisioned_set);
+    CLOSE_ALL_FILES(f_set[0], f_set[1]);
 }

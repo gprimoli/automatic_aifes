@@ -51,7 +51,12 @@ int main(int argc, char *argv[]) {
         run_training(conf, model, optimizer);
     }
 
-    run_evaluation(conf, model);
+    if (conf->save) {
+        load_model(conf, model);
+    }
+
+    run_evaluation(conf, model, "test.csv");
+    run_evaluation(conf, model, "unvisioned.csv");
 
     LOG_INFO("Memoria allocata: %.4f KB", mem_total() / 1024.0);
 
