@@ -4,6 +4,7 @@
 #include "ini.h"
 
 bool load_config(aiconfiguration_t *conf, const char *filename) {
+    conf->best_acc = 0;
     return ini_parse(filename, handler, conf);
 }
 

@@ -309,6 +309,7 @@ void load_model(aiconfiguration_t *conf, aimodel_t *model) {
 
 void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer) {
     LOG_INFO("Inizio Training");
+    float acc = 0, loss = 0;
 
     uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
                                   ? conf->batch_size * conf->input_shape[1]
@@ -359,7 +360,7 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
         }
 
         LOG_INFO("Inizio Valutazione con: validation.csv");
-        run_inference(conf, model, f_x_validation_set, f_y_validation_set, conf->sample_number.validation);
+        run_inference(conf, model, f_x_validation_set, f_y_validation_set, conf->sample_number.validation, &acc, &loss);
     }
 
     if (conf->pruning > 0) {
@@ -367,7 +368,11 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
     }
 
     LOG_INFO("Inizio Valutazione con: test.csv");
-    run_inference(conf, model, f_x_test_set, f_y_test_set, conf->sample_number.test);
+    run_inference(conf, model, f_x_test_set, f_y_test_set, conf->sample_number.test, &acc, &loss);
+    if (conf->save && acc > conf->best_acc) {
+        save_model(conf, model);
+    }
+
 
     if (conf->quantization != F32 && !conf->already_quantized) {
         LOG_INFO("Finalizing quantization");
@@ -383,13 +388,18 @@ void run_training(aiconfiguration_t *conf, aimodel_t *model, aiopti_t *optimizer
 
 void run_evaluation(aiconfiguration_t *conf, aimodel_t *model) {
     FILE *f_x_unvisioned_set, *f_y_unvisioned_set;
-    if (!open_csv(&f_x_unvisioned_set, conf->basedir, "x_unvisioned.csv", "r")
-        || !open_csv(&f_y_unvisioned_set, conf->basedir, "y_unvisioned.csv", "r")) {
-        SAFE_EXIT_FAILURE("Errore apertura file CSV");
+    float acc = 0, loss = 0;
+
+    if (!open_csv(&f_x_unvisioned_set, conf->basedir, "x_unvisioned.csv", "r")) {
+        SAFE_EXIT_FAILURE("Errore apertura x_unvisioned_set CSV");
     }
+    if (!open_csv(&f_y_unvisioned_set, conf->basedir, "y_unvisioned.csv", "r")) {
+        SAFE_EXIT_FAILURE("Errore apertura y_unvisioned_set CSV");
+    }
+
     LOG_INFO("Inizio Valutazione con: unvisioned.csv");
 
-    run_inference(conf, model, f_x_unvisioned_set, f_y_unvisioned_set, conf->sample_number.unvisioned);
+    run_inference(conf, model, f_x_unvisioned_set, f_y_unvisioned_set, conf->sample_number.unvisioned, &acc, &loss);
 
     CLOSE_ALL_FILES(f_x_unvisioned_set, f_y_unvisioned_set);
 }

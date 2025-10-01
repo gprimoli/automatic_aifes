@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Cifar" type="CMakeRunConfiguration" factoryName="Application" singleton="false" PROGRAM_PARAMS="&quot;C:\\Users\\Lab\\CLionProjects\\automatic_aifes-main\\assets\\conf\\cifar.ini&quot;" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="automatic_aifes" TARGET_NAME="automatic_aifes" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="automatic_aifes" RUN_TARGET_NAME="automatic_aifes">
+    <method v="2">
+      <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+    </method>
+  </configuration>
+</component>

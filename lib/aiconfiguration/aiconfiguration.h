@@ -115,6 +115,7 @@ typedef struct aiconfiguration {
     aitensor_t *x;
     aitensor_t *y;
 
+    float best_acc;
 } aiconfiguration_t;
 
 typedef struct aiconfiguration aiconfiguration_t;

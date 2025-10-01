@@ -94,7 +94,7 @@ static bool aialgo_calc_loss_acc_model_f32(aiconfiguration_t *conf, aimodel_t *m
     return true;
 }
 
-static void run_inference(aiconfiguration_t *conf, aimodel_t *model, FILE *f_x, FILE *f_y, uint32_t sample_number) {
+static void run_inference(aiconfiguration_t *conf, aimodel_t *model, FILE *f_x, FILE *f_y, uint32_t sample_number, float *acc, float *loss) {
     uint32_t input_elements = (conf->input_shape[2] == 0 && conf->input_shape[3] == 0)
                                   ? conf->batch_size * conf->input_shape[1]
                                   : conf->batch_size * conf->input_shape[1] * conf->input_shape[2] * conf->input_shape
@@ -103,19 +103,18 @@ static void run_inference(aiconfiguration_t *conf, aimodel_t *model, FILE *f_x, 
 
     uint32_t batch_test = sample_number / conf->batch_size;
 
-    float loss, acc;
-    loss = acc = 0.0f;
+    *loss = *acc = 0.0f;
     for (int batch = 0; batch < batch_test; batch++) {
         if (!csv_read(conf->x->data, input_elements, f_x) || !csv_read(conf->y->data, output_elements, f_y)) {
             SAFE_EXIT_FAILURE("Errore lettura batch da CSV");
         }
 
-        if (!aialgo_calc_loss_acc_model_f32(conf, model, &loss, &acc)) {
+        if (!aialgo_calc_loss_acc_model_f32(conf, model, loss, acc)) {
             SAFE_EXIT_FAILURE("Acc loss error");
         }
     }
 
-    LOG_INFO("Inference Loss: %.5f\tAccuracy: %.5f", loss, acc);
+    LOG_INFO("Inference Loss: %.5f\tAccuracy: %.5f", *loss, *acc);
     RESET_ALL_FILES(f_x, f_y);
 }
 
