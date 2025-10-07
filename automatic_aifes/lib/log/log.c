@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-LogLevel CURRENT_LOG_LEVEL = LOG_VERBOSE_NO_FILE;
+LogLevel CURRENT_LOG_LEVEL = LOG_VERBOSE_NO_FILE; // LOG_VERBOSE || LOG_VERBOSE_NO_FILE
 FILE *log_file = NULL;
 
 bool initLogFile(const char *path) {
@@ -18,7 +18,7 @@ bool initLogFile(const char *path) {
         snprintf(fullpath, sizeof(fullpath), "%s/%s_%u.log", path, filename, rand() % 100000);
 
         log_file = fopen(fullpath, "w");
-        if (!log_file) return false;
+        return log_file != NULL;
     }
     return true;
 }

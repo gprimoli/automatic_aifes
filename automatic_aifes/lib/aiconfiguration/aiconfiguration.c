@@ -4,6 +4,7 @@
 #include "ini.h"
 
 bool load_config(aiconfiguration_t *conf, const char *filename) {
+    conf->best_acc = 0;
     return ini_parse(filename, handler, conf);
 }
 
@@ -11,7 +12,6 @@ const char *quantization_to_str(Quantization quantization) {
     switch (quantization) {
         case Q31: return "Q31";
         case Q7: return "Q7";
-        case Q1: return "Q1";
         default: return "F32";
     }
 }

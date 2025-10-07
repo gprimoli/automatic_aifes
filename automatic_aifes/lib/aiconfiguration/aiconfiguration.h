@@ -2,7 +2,6 @@
 #define AICONFIGURATION_H
 
 #include <stdbool.h>
-#include <stdint.h>
 #include "basic/base/aimath/aimath_f32.h"
 
 #define MAX_LAYERS 128
@@ -75,18 +74,27 @@ typedef enum {
 } Loss;
 
 typedef enum {
-    F32, Q31, Q7, Q1
+    F32, Q31, Q7
 } Quantization;
 
-typedef struct ayconfigurationlayer {
+typedef struct aiconfigurationlayer {
     Layer_type type;
     Layer_type activation;
     LayerParams params;
 } aiconfigurationlayer_t;
 
+typedef struct samplenumber {
+    uint32_t train;
+    uint32_t validation;
+    uint32_t test;
+    uint32_t unvisioned;
+}samplenumber_t;
+
 typedef struct aiconfiguration {
     char *basedir;
     bool training;
+    bool pruning_aware_training;
+    bool already_quantized;
     char *load;
     char *save;
     float pruning;
@@ -103,10 +111,11 @@ typedef struct aiconfiguration {
 
     //Calcolati
     uint32_t num_layer;
-    uint32_t sample_train;
-    uint32_t sample_test;
+    samplenumber_t sample_number;
     aitensor_t *x;
     aitensor_t *y;
+
+    float best_acc;
 } aiconfiguration_t;
 
 typedef struct aiconfiguration aiconfiguration_t;

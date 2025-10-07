@@ -1,5 +1,6 @@
 #ifndef LOG_INTERNAL_H
 #define LOG_INTERNAL_H
+
 #include <time.h>
 
 static const char *get_timestamp(void) {
