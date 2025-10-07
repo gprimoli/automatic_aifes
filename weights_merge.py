@@ -62,7 +62,7 @@ def main():
     print("Qua sono entrato");
     parser.add_argument('file1', type=str, help="Il file contenente i pesi del primo modello")
     parser.add_argument('file2', type=str, help="Il file contenente i pesi del secondo modello")
-    parser.add_argument('--alpha', type=float, default=0.5, help="Peso del primo modello (default: 0.5)")
+    parser.add_argument('--alpha', type=float, default=1, help="Peso del primo modello (default: 0.5)")
     parser.add_argument('--output', type=str, default="toload.csv", help="File di output per i pesi combinati")
 
     args = parser.parse_args()

@@ -7,6 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import os
 from sklearn.utils import resample
+from sklearn.model_selection import StratifiedKFold
 
 ## Configuration parameters
 n_nodes = 5
@@ -17,49 +18,6 @@ for i in range(n_nodes):
         os.mkdir(f'dataset/{ip_nodes[i]}')
     except:
         print("Folder already created.")
-
-def split_and_save_csv(X, y, n_parts, prefix):
-    base_chunk_size = len(X) // n_parts
-    remainder = len(X) % n_parts
-    start_idx = 0
-    for i in range(n_parts):
-        chunk_size = base_chunk_size + 1 if i < remainder else base_chunk_size
-        end_idx = start_idx + chunk_size
-        X_chunk = X.iloc[start_idx:end_idx]
-        y_chunk = y.iloc[start_idx:end_idx]
-        X_chunk.to_csv(f'dataset/{ip_nodes[i]}/x_{prefix}.csv', index=False, header=False)
-        y_chunk.to_csv(f'dataset/{ip_nodes[i]}/y_{prefix}.csv', index=False, header=False)
-        print(f"Part {i+1} saved as {prefix}_{ip_nodes[i]}_training.csv")
-        
-        start_idx = end_idx
-
-def split_and_save_csv_non_iid(X, y, n_parts, prefix):
-    y_labels = y.idxmax(axis=1)  # trova l'indice della classe per ciascun esempio one-hot
-    data = X.copy()
-    data['Label'] = y_labels
-
-    unique_labels = y_labels.unique()
-    n_labels = len(unique_labels)
-    
-    # Distribuzione delle classi in modo che ogni nodo abbia una o due classi predominanti
-    class_splits = {i: [] for i in range(n_parts)}
-    for i, label in enumerate(unique_labels):
-        indices = data[data['Label'] == label].index.tolist()
-        np.random.shuffle(indices)
-        chunk_size = len(indices) // n_parts
-        for j in range(n_parts):
-            selected = indices[j*chunk_size:(j+1)*chunk_size]
-            class_splits[j].extend(selected)
-
-    # Per ogni nodo salva i dati corrispondenti
-    for i in range(n_parts):
-        idxs = class_splits[i]
-        X_chunk = X.loc[idxs]
-        y_chunk = y.loc[idxs]
-        X_chunk.to_csv(f'dataset/{ip_nodes[i]}/x_{prefix}.csv', index=False, header=False)
-        y_chunk.to_csv(f'dataset/{ip_nodes[i]}/y_{prefix}.csv', index=False, header=False)
-        print(f"[NON-IID] Part {i+1} saved as {prefix}_{ip_nodes[i]}")
-
 
 warnings.filterwarnings('ignore')
 
@@ -106,13 +64,124 @@ X_test_sample = X_test.loc[sample_indices_test]
 y_test_sample = y_test.loc[sample_indices_test]
 
 # Save the sampled data to CSV files
-X_train_sample.to_csv("dataset/X_train.csv", index=False, header=False)
-X_test_sample.to_csv("dataset/X_test.csv", index=False, header=False)
-y_train_sample.to_csv("dataset/y_train.csv", index=False, header=False)
-y_test_sample.to_csv("dataset/y_test.csv", index=False, header=False)
+# X_train_sample.to_csv("dataset/X_train.csv", index=False, header=False)
+# X_test_sample.to_csv("dataset/X_test.csv", index=False, header=False)
+# y_train_sample.to_csv("dataset/y_train.csv", index=False, header=False)
+# y_test_sample.to_csv("dataset/y_test.csv", index=False, header=False)
 
-split_and_save_csv_non_iid(X_train_sample, y_train_sample, n_nodes, prefix='train')
-split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='test')
+# split_and_save_csv(X_train_sample, y_train_sample, n_nodes, prefix='train')
+# split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='test')
 
 #split_and_save_csv_non_iid(X_train_sample, y_train_sample, n_nodes, prefix='train')
 #split_and_save_csv(X_test_sample, y_test_sample, n_nodes, prefix='test')
+
+import os
+import numpy as np
+import pandas as pd
+
+def dirichlet_non_iid_partitions(y_onehot: pd.DataFrame, n_parts: int, alpha: float = 0.3, seed: int = 42):
+    """
+    Crea n_parts partizioni non-IID per label-skew usando una distribuzione Dirichlet(α) per classe.
+    - y_onehot: DataFrame one-hot delle etichette (righe = campioni)
+    - n_parts:  numero di nodi
+    - alpha:    parametro Dirichlet (più piccolo = più non-IID)
+    Ritorna: lista di array di indici, uno per nodo.
+    """
+    rng = np.random.RandomState(seed)
+    y_labels = y_onehot.idxmax(axis=1).to_numpy()
+    classes = np.unique(y_labels)
+
+    # Indici per classe
+    idx_by_class = {c: np.where(y_labels == c)[0] for c in classes}
+    for c in classes:
+        rng.shuffle(idx_by_class[c])
+
+    # Costruisci le quote per ogni classe ~ Dirichlet
+    parts = [[] for _ in range(n_parts)]
+    for c in classes:
+        idxs = idx_by_class[c]
+        if len(idxs) == 0:
+            continue
+        props = rng.dirichlet([alpha] * n_parts)                 # quota per nodo
+        counts = (props * len(idxs)).astype(int)
+
+        # aggiusta per eventuale arrotondamento
+        while counts.sum() < len(idxs):
+            counts[rng.randint(0, n_parts)] += 1
+
+        start = 0
+        for i in range(n_parts):
+            end = start + counts[i]
+            if end > start:
+                parts[i].extend(idxs[start:end].tolist())
+            start = end
+
+    # Shuffle finale per nodo
+    for i in range(n_parts):
+        parts[i] = np.array(rng.permutation(parts[i]), dtype=int)
+    return parts
+
+
+def save_train_parts_per_node(X: pd.DataFrame, y_onehot: pd.DataFrame, parts, ip_nodes, prefix='train'):
+    """Salva x_train/y_train per nodo + un file di riepilogo classi."""
+    y_labels_all = y_onehot.idxmax(axis=1)
+    for i, idx in enumerate(parts):
+        node_dir = f'dataset/{ip_nodes[i]}'
+        os.makedirs(node_dir, exist_ok=True)
+        X_chunk = X.iloc[idx]
+        y_chunk = y_onehot.iloc[idx]
+        X_chunk.to_csv(f'{node_dir}/x_{prefix}.csv', index=False, header=False)
+        y_chunk.to_csv(f'{node_dir}/y_{prefix}.csv', index=False, header=False)
+
+        # log distribuzione
+        y_lab = y_labels_all.iloc[idx]
+        dist = y_lab.value_counts().to_dict()
+        with open(f'{node_dir}/split_info_{prefix}.txt', 'w') as f:
+            f.write(f"[DIRICHLET α={alpha}] node {ip_nodes[i]} | n={len(idx)}\n")
+            for lab, cnt in sorted(dist.items()):
+                f.write(f"class {lab}: {cnt}\n")
+        print(f"[DIRICHLET] saved {prefix} for {ip_nodes[i]} (n={len(idx)})")
+
+
+def replicate_test_to_all_nodes(X_test: pd.DataFrame, y_test: pd.DataFrame, ip_nodes, prefix='test'):
+    """Replica lo stesso set di test su tutti i nodi (valutazione coerente)."""
+    for ip in ip_nodes:
+        node_dir = f'dataset/{ip}'
+        os.makedirs(node_dir, exist_ok=True)
+        X_test.to_csv(f'{node_dir}/x_{prefix}.csv', index=False, header=False)
+        y_test.to_csv(f'{node_dir}/y_{prefix}.csv', index=False, header=False)
+    print(f"[TEST] replicated to {len(ip_nodes)} nodes.")
+
+# ========= dopo la tua preparazione di X_train, X_test, y_train, y_test =========
+
+# (opzionale) se volevi davvero un sotto-campione, imposta frac=0.05 (ora era 1.0)
+sample_frac = 1.0
+X_train_sample = X_train.sample(frac=sample_frac, random_state=42)
+y_train_sample = y_train.loc[X_train_sample.index]
+X_test_sample  = X_test   # tieni il test completo
+y_test_sample  = y_test
+
+# IID stratificato del TRAIN in n nodi
+#parts = stratified_iid_partitions(X_train_sample, y_train_sample, n_nodes, seed=42)
+#save_train_parts_per_node(X_train_sample, y_train_sample, parts, ip_nodes, prefix='train')
+
+# Parametri non-IID
+alpha = 9   # più piccolo => più non-IID (es. 0.1 molto sbilanciato; 10 ~ quasi IID)
+seed  = 42
+
+# 1) genera le partizioni
+parts = dirichlet_non_iid_partitions(y_train_sample, n_nodes, alpha=alpha, seed=seed)
+
+# (opzionale) controllo: nessun nodo vuoto?
+for i, p in enumerate(parts):
+    if len(p) == 0:
+        # Se capita con dataset molto piccolo, redistribuisci 1 campione a quel nodo
+        # (edge case raro con α molto basso)
+        donor = max(range(n_nodes), key=lambda j: len(parts[j]))
+        parts[i] = np.array([parts[donor][0]], dtype=int)
+        parts[donor] = parts[donor][1:]
+
+save_train_parts_per_node(X_train_sample, y_train_sample, parts, ip_nodes, prefix='train')
+
+replicate_test_to_all_nodes(X_test_sample, y_test_sample, ip_nodes, prefix='test')
+

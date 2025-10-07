@@ -10,6 +10,7 @@ import ini from 'ini';
 import fs from 'fs';
 import { sha256, delay, get_ip_addr } from './utils.js';
 
+import { promisify } from 'util';
 var num_send_to_do = 0
 var peer_id_known_peers = []
 var age_local_model = 0
@@ -29,6 +30,10 @@ const NUM_EPOCHS_PER_ROUND = 1000
 
 const evolution_accuracy = {};
 
+const execp = promisify(exec);
+
+let inFlight = Promise.resolve();
+
 const fileBuffer = fs.readFileSync(my_training_y_file);
 const dataset_length = fileBuffer.toString().split("\n").length - 1;
 
@@ -40,99 +45,116 @@ if (!fs.existsSync(path_dir_models)) {
 
 // Function to execute when we receive a model
 async function on_model_received({ stream }) {
-    console.log("Metodo on_model_received invocato.")
-    // Model received, so we can start with the flow of training
-    const result = await pipe(
-        stream,
-        async function* (source) {
-            for await (const list of source) {
-                yield list.subarray()
-            }
-        },
-        toBuffer
-    ).finally(() => {
-        stream.close()
-    })
+  console.log("Metodo on_model_received invocato.");
 
+  // 1) Ricezione buffer (modello + 2 byte di age) e chiusura stream
+  const result = await pipe(
+    stream,
+    async function* (source) {
+      for await (const list of source) yield list.subarray();
+    },
+    toBuffer
+  ).finally(() => {
+    try { stream.close(); } catch {}
+  });
 
-    // Save the received model in a path
-    const model_buff = result.slice(0, result.length - 2) // Without the Age of the model
-    console.log('sha256 del file modello ricevuto: ', sha256(model_buff))
-    try {
-        // Assicurati che la directory esista
-        if (!fs.existsSync(path_dir_models)) {
-            fs.mkdirSync(path_dir_models, { recursive: true });
-            console.log("Directory creata:", path_dir_models);
-        }
+  // 2) Split: modello e age
+  
+  const model_buff = result.slice(0, result.length - 2);
+  // Prima di leggere l’età del modello
+const buffer_age = Buffer.from(result);  
+const age_received_model = buffer_age.readUInt16BE(result.length - 2);
+  const sha = sha256(model_buff);
+  console.log('sha256 del file modello ricevuto: ', sha);
+  console.log('age modello ricevuto aggiornatooooo: ', age_received_model);
 
-        fs.writeFileSync(path_dir_models + sha256(model_buff), model_buff);
-        console.log("File modello salvato con successo in:", path_dir_models + sha256(model_buff));
-    } catch (err) {
-        console.error("Errore durante il salvataggio del file modello:", err);
+  // 3) Persist del file ricevuto (async, atomico)
+  try {
+    await fs.promises.mkdir(path_dir_models, { recursive: true });
+    const receivedPath = path_dir_models + sha;
+    await fs.promises.writeFile(receivedPath, model_buff);
+    console.log("File modello salvato con successo in:", receivedPath);
+  } catch (err) {
+    console.error("Errore durante il salvataggio del file modello:", err);
+    return; // abort: senza file non possiamo proseguire
+  }
+
+  console.log(`Sono al round ${index_training} su ${NUM_ROUNDS}`);
+
+  // 4) Serializza MERGE → TRAIN → LOG usando la coda `inFlight`
+  inFlight = inFlight.then(async () => {
+    const receivedPath = path_dir_models + sha;
+    const toLoadPath = `/app/dataset/${my_ip}/toload.csv`;
+    const cfgPath = `/app/automatic_aifes/config_${my_ip}_t.ini`;
+
+    // 4.a) Merge pesi -> toload.csv
+    const mergeCmd = `python ${root_path}weights_merge.py "${my_model_file}" "${receivedPath}" --output "${toLoadPath}"`;
+    console.log("Eseguo merge:", mergeCmd);
+    await execp(mergeCmd);
+
+    // 4.b) Aggiorna INI (abilita/disabilita load)
+    const config_ini = ini.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    if (fs.existsSync(toLoadPath)) {
+      config_ini.general = config_ini.general || {};
+      config_ini.general.load = "toload.csv";
+    } else {
+      if (config_ini.general) delete config_ini.general.load;
     }
-    const buffer_age = Buffer.from(result)
-    var age_received_model = buffer_age.readUInt16BE(result.length - 2) // Just the age of the model
-    console.log('age modello ricevuto: ', age_received_model)
+    fs.writeFileSync(cfgPath, ini.stringify(config_ini));
 
-    console.log("Sono al round " + index_training + " su " + NUM_ROUNDS)
-    // Merge the models and save the resulting model in a path
-    await exec("python " + root_path + "weights_merge.py " + my_model_file + " " + path_dir_models + sha256(model_buff) + " --output \"/app/dataset/" + my_ip + "/toload.csv\"", async (error, stdout, stderr) => {
+    // 4.c) Training con automatic_aifes
+    const trainCmd = `${root_path}automatic_aifes/automatic_aifes "${cfgPath}"`;
+    console.log("Executing", trainCmd);
+    const { stdout } = await execp(trainCmd);
 
+    // 4.d) Parse metriche
+    const lines = stdout.split('\n');
+    const losses = [];
+    const accuracies = [];
+    const regex = /\[INFO\] Loss:\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*Accuracy:\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)/;
 
-        const config_ini = ini.parse(fs.readFileSync("/app/automatic_aifes/config_" + my_ip + "_t.ini", 'utf-8'));
-        if (!fs.existsSync(root_path + 'dataset/' + my_ip + '/toload.csv')) delete config_ini.general.load
-        else config_ini.general.load = "toload.csv"
-        fs.writeFileSync("/app/automatic_aifes/config_" + my_ip + "_t.ini", ini.stringify(config_ini));
+    for (const line of lines) {
+      const m = line.match(regex);
+      if (m) {
+        const loss = parseFloat(m[1]);
+        const acc  = parseFloat(m[2]);
+        if (!Number.isNaN(loss)) losses.push(loss);
+        if (!Number.isNaN(acc))  accuracies.push(acc);
+      }
+    }
 
-        const cmd_to_exec = root_path + "automatic_aifes/automatic_aifes /app/automatic_aifes/config_" + my_ip + "_t.ini";
-        console.log("Executing " + cmd_to_exec);
-        exec(cmd_to_exec, (error, stdout, stderr) => {
-            if (error) {
-                console.log(JSON.stringify(null, error, 2));
-                console.error(`Errore questo qua: ${error.message}`);
-                return;
-            }
-            if (stderr) {
-                console.error(`stderr: ${stderr}`);
-                return;
-            }
+    console.log('Losses:', losses);
+    console.log('Accuracies:', accuracies);
 
-            //console.log(`Output: ${stdout}`);
+    // 4.e) Aggiorna evoluzione accuracy (ultimo valore se presente)
+    if (accuracies.length > 0) {
+      const lastAcc = accuracies[accuracies.length - 1];
+      if (evolution_accuracy[my_ip]) {
+        evolution_accuracy[my_ip].push(lastAcc);
+      } else {
+        evolution_accuracy[my_ip] = [lastAcc];
+      }
+    } else {
+      console.warn("Nessuna accuracy trovata nello stdout; non aggiorno la serie.");
+    }
 
-            const lines = stdout.split('\n');
+    console.log(`Index training round: ${index_training} | Age modello locale: ${age_local_model}`);
+    num_send_to_do++;
+    age_local_model++;
 
-            const losses = [];
-            const accuracies = [];
-            const regex = /\[INFO\] Loss:\s*([\d.]+)\s*Accuracy:\s*([\d.]+)/;
+    console.log(evolution_accuracy);
+    await fs.promises.writeFile('result.json', JSON.stringify(evolution_accuracy), 'utf8');
 
-            for (const line of lines) {
-                const match = line.match(regex);
-                if (match) {
-                    const loss = parseFloat(match[1]);
-                    const accuracy = parseFloat(match[2]);
-                    losses.push(loss);
-                    accuracies.push(accuracy);
-                }
-            }
+    // 4.f) (Opzionale) cleanup del file ricevuto per evitare accumulo
+    try { await fs.promises.unlink(receivedPath); } catch {}
+  }).catch((err) => {
+    console.error("Errore nella pipeline merge/train:", err);
+  });
 
-            console.log('Losses:', losses);
-            console.log('Accuracies:', accuracies);
-            if (evolution_accuracy[my_ip]) {
-                evolution_accuracy[my_ip].push(accuracies[accuracies.length - 1]);
-            } else {
-                evolution_accuracy[my_ip] = [accuracies[accuracies.length - 1]];
-            }
-            console.log('Index training round: ' + index_training + " Age modello locale: " + age_local_model)
-            num_send_to_do++;
-            age_local_model++;
-            console.log(evolution_accuracy);
-        });
-
-
-        //fs.unlinkSync(path_dir_models + sha256(model_buff))
-    })
-
+  // Attendi che questa unit di lavoro finisca prima di restituire
+  await inFlight;
 }
+
 
 // Creazione del nodo, andandomi a prendere un ip disponibile
 const createNode = async () => {
@@ -151,19 +173,10 @@ const createNode = async () => {
 
 // JUST FOR TEST TO REMOVE IN PROD, or maybe to mantain for the first training.
 
-const config_ini = ini.parse(fs.readFileSync("/app/automatic_aifes/config_" + my_ip + "_t.ini", 'utf-8'));
-if (!fs.existsSync(root_path + 'dataset/' + my_ip + '/toload.csv')) delete config_ini.general.load
-else config_ini.general.load = "toload.csv"
-fs.writeFileSync("/app/automatic_aifes/config_" + my_ip + "_t.ini", ini.stringify(config_ini));
 let cmd_to_exec = root_path + "automatic_aifes/automatic_aifes \"/app/automatic_aifes/config_" + my_ip + "_t.ini\"";
-
-//const cmd_to_exec = root_path + "automatic_aifes/automatic_aifes -l 15,3,1 -a relu,sigmoid -b 32 -e " + NUM_EPOCHS_PER_ROUND + " -i " + my_training_x_file + " -t " + my_training_y_file + weights_option + " -s " + dataset_length;
-
 console.log("Executing " + cmd_to_exec);
 await exec(cmd_to_exec, (error, stdout, stderr) => {
 
-    console.log("ciao sono qua")
-    console.log(sha256(root_path + "automatic_aifes/automatic_aifes"));
     if (error) {
         console.error(`Errore test: ${error.message}`);
         return;
@@ -228,7 +241,7 @@ for (var index_training = 0; index_training < NUM_ROUNDS; index_training++) {
     //const stream = await node.dialProtocol(peerIdFromString(peer_id_known_peers[random_peer]), '/on_model_received')
     const stream = await node.dialProtocol(peer_id_known_peers[random_peer], '/on_model_received') // Open the stream
 
-    let content_model_file = await fs.readFileSync(my_model_file)
+    let content_model_file = await fs.readFileSync(root_path + 'dataset/' + my_ip + '/save.csv')
     console.log('sha256 del file modello da inviare: ', sha256(content_model_file))
 
     const buff_age = Buffer.alloc(2) // Put the age of the model
